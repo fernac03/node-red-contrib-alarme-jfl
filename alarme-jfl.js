@@ -1,4 +1,8 @@
- function AlarmeJFLNode(config) {
+// alarme-jfl.js
+module.exports = function(RED) {
+    "use strict";
+    
+    function AlarmeJFLNode(config) {
         RED.nodes.createNode(this, config);
         const node = this;
         const net = require('net');
