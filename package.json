@@ -1,0 +1,29 @@
+{
+    "name": "node-red-contrib-alarme-jfl",
+    "version": "1.0.0",
+    "description": "Nó Node-RED para comunicação com central de alarme JFL via TCP socket",
+    "main": "alarme-jfl.js",
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "keywords": [
+        "node-red",
+        "alarme",
+        "jfl",
+        "tcp",
+        "socket",
+        "security"
+    ],
+    "author": "Seu Nome",
+    "license": "MIT",
+    "node-red": {
+        "nodes": {
+            "alarme-jfl": "alarme-jfl.js"
+        }
+    },
+    "dependencies": {},
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/seunome/node-red-contrib-alarme-jfl.git"
+    }
+}
