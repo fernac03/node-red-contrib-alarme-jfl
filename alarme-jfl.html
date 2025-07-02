@@ -1,0 +1,72 @@
+<script type="text/javascript">
+    RED.nodes.registerType('alarme-jfl', {
+        category: 'network',
+        color: '#a6bbcf',
+        defaults: {
+            name: { value: "" },
+            port: { value: 9999, required: true, validate: RED.validators.number() },
+            host: { value: "0.0.0.0", required: true }
+        },
+        inputs: 0,
+        outputs: 1,
+        icon: "bridge.png",
+        label: function() {
+            return this.name || `Alarme JFL:${this.port}`;
+        },
+        paletteLabel: "Alarme JFL"
+    });
+</script>
+
+<script type="text/html" data-template-name="alarme-jfl">
+    <div class="form-row">
+        <label for="node-input-name"><i class="icon-tag"></i> Nome</label>
+        <input type="text" id="node-input-name" placeholder="Nome do nó">
+    </div>
+    <div class="form-row">
+        <label for="node-input-port"><i class="icon-bookmark"></i> Porta</label>
+        <input type="text" id="node-input-port" placeholder="9999">
+    </div>
+    <div class="form-row">
+        <label for="node-input-host"><i class="icon-globe"></i> Host</label>
+        <input type="text" id="node-input-host" placeholder="0.0.0.0">
+    </div>
+</script>
+
+<script type="text/html" data-help-name="alarme-jfl">
+    <p>Nó para comunicação com central de alarme JFL via TCP socket.</p>
+    
+    <h3>Detalhes</h3>
+    <p>Este nó cria um servidor TCP que escuta conexões na porta especificada. 
+    Quando recebe um pacote de exatamente 5 bytes, responde automaticamente com 
+    a mensagem <code>0x7B 0x06 0x01 0x40 0x01</code> seguida de um checksum XOR.</p>
+    
+    <h3>Configuração</h3>
+    <dl class="message-properties">
+        <dt>Port <span class="property-type">number</span></dt>
+        <dd>Porta TCP onde o servidor irá escutar (padrão: 9999)</dd>
+        
+        <dt>Host <span class="property-type">string</span></dt>
+        <dd>Endereço IP para bind do servidor (padrão: 0.0.0.0 - todas as interfaces)</dd>
+    </dl>
+    
+    <h3>Saída</h3>
+    <dl class="message-properties">
+        <dt>payload <span class="property-type">object</span></dt>
+        <dd>Objeto contendo:
+            <ul>
+                <li><code>received</code> - dados recebidos em hex</li>
+                <li><code>sent</code> - resposta enviada em hex</li>
+                <li><code>timestamp</code> - timestamp da comunicação</li>
+            </ul>
+        </dd>
+    </dl>
+    
+    <h3>Status</h3>
+    <p>O nó mostra diferentes status:</p>
+    <ul>
+        <li><strong>Aguardando conexão</strong> - servidor ativo, aguardando cliente</li>
+        <li><strong>Conectado</strong> - cliente conectado</li>
+        <li><strong>Pacote processado</strong> - resposta enviada com sucesso</li>
+        <li><strong>Erro</strong> - problema na comunicação</li>
+    </ul>
+</script>
