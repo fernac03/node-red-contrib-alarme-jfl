@@ -26,8 +26,8 @@ module.exports = function(RED) {
         }
         
         // Função para criar mensagem de resposta padrão
-        function createResponseMessage() {
-            const baseMessage = Buffer.from([0x7B, 0x06, 0x01, 0x40, 0x01]);
+        function createResponseMessage(msg) {
+            const baseMessage = Buffer.from(msg);
             const checksum = calculateChecksum(baseMessage);
             return Buffer.concat([baseMessage, Buffer.from([checksum])]);
         }
@@ -35,7 +35,7 @@ module.exports = function(RED) {
         // Função para enviar keep alive para todos os clientes conectados
         function sendKeepAlive() {
             if (connectedSockets.size > 0) {
-                const keepAliveMessage = createResponseMessage();
+                const keepAliveMessage = createResponseMessage([0x7B, 0x06, 0x01, 0x40, 0x01]);
                 connectedSockets.forEach(socket => {
                     if (!socket.destroyed) {
                         socket.write(keepAliveMessage, (err) => {
@@ -80,17 +80,24 @@ module.exports = function(RED) {
             } else if (packetSize === 102) {
                 shouldRespond = true;
                 packetType = 'status_102';
+                if (data[3] === 0x21) {
+                } else {
+                }
+                msg=[0x7B, 0x07, 0x01, 0x21, 0x01,0x01];
+ 
             } else if (packetSize >= 118) {
                 shouldRespond = true;
                 packetType = 'extended_status';
+                msg=[0x7B, 0x06, 0x01, 0x40, 0x01];
             } else {
                 packetType = 'invalid';
                 node.warn(`Tamanho de pacote não suportado: ${packetSize} bytes`);
+                msg=[0x7B, 0x06, 0x01, 0x40, 0x01];
             }
-            
+                        
             if (shouldRespond) {
                 // Criar e enviar resposta
-                const responseMessage = createResponseMessage();
+                const responseMessage = createResponseMessage(msg]);
                 
                 socket.write(responseMessage, (err) => {
                     if (err) {
