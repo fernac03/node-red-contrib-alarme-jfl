@@ -210,7 +210,9 @@ module.exports = function(RED) {
                             eventInfo.eletrificador = true;
                         }
                         break;
-                        
+                    case '1306':   
+                        eventInfo.state = 'Mudança na programação';
+                        break;
                     case '1401':
                     case '1407':
                     case '1403':
@@ -223,7 +225,9 @@ module.exports = function(RED) {
                         eventInfo.eletrificador = false;
                         eventInfo.state = 'DISARMED';
                         break;
-                        
+                    case '1602':
+                        eventInfo.state = 'Teste Periodico';
+                        break;
                     case '1130':
                         // Fire alarm - somente se armado (home ou away)
                         if (eventInfo.armed_home || eventInfo.armed_away) {
