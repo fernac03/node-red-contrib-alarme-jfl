@@ -17,6 +17,17 @@ module.exports = function(RED) {
         let connectedSockets = new Set();
         let clientStartBytes = new Map(); // Armazena o byte inicial de cada cliente
         
+        // Estado atual do alarme
+        let currentAlarmState = {
+            armed_away: false,
+            armed_night: false,
+            armed_home: false,
+            alarm_sounding: false,
+            fire_alarm: false,
+            eletrificador: false,
+            state: 'DISARMED'
+        };
+        
         // Códigos de comando para o alarme
         const alarmCommands = {
             armAway: [0x06, 0x01, 0x4E, 0x01],      // Armar Away
@@ -158,6 +169,115 @@ module.exports = function(RED) {
             return sendAlarmCommand(alarmCommands.armStay, 'ARM_STAY');
         }
         
+        // Função para processar eventos de pacotes de 24 bytes
+        function processEvent24(data) {
+            let eventInfo = {
+                evento: '',
+                previousState: JSON.parse(JSON.stringify(currentAlarmState)), // Cópia do estado anterior
+                armed_away: currentAlarmState.armed_away,
+                armed_night: currentAlarmState.armed_night,
+                armed_home: currentAlarmState.armed_home,
+                alarm_sounding: currentAlarmState.alarm_sounding,
+                fire_alarm: currentAlarmState.fire_alarm,
+                eletrificador: currentAlarmState.eletrificador,
+                state: currentAlarmState.state
+            };
+            
+            // Extrair evento dos bytes 8-11 (4 bytes ASCII)
+            if (data.length >= 12) {
+                eventInfo.evento = data.slice(8, 12).toString('ascii');
+                
+                // Processar eventos conforme a lógica Python
+                switch (eventInfo.evento) {
+                    case '3441':
+                        eventInfo.armed_away = false;
+                        eventInfo.armed_night = false;
+                        eventInfo.armed_home = true;
+                        eventInfo.state = 'ARMED_HOME';
+                        break;
+                        
+                    case '3401':
+                    case '3407':
+                    case '3403':
+                    case '3404':
+                    case '3408':
+                    case '3409':
+                        eventInfo.armed_away = true;
+                        eventInfo.armed_night = false;
+                        eventInfo.armed_home = false;
+                        eventInfo.state = 'ARMED_AWAY';
+                        if (eventInfo.evento === '3407') {
+                            eventInfo.eletrificador = true;
+                        }
+                        break;
+                        
+                    case '1401':
+                    case '1407':
+                    case '1403':
+                    case '1409':
+                        eventInfo.armed_home = false;
+                        eventInfo.armed_away = false;
+                        eventInfo.armed_night = false;
+                        eventInfo.alarm_sounding = false;
+                        eventInfo.fire_alarm = false;
+                        eventInfo.eletrificador = false;
+                        eventInfo.state = 'DISARMED';
+                        break;
+                        
+                    case '1130':
+                        // Fire alarm - somente se armado (home ou away)
+                        if (eventInfo.armed_home || eventInfo.armed_away) {
+                            eventInfo.fire_alarm = true;
+                        }
+                        break;
+                        
+                    case '3130':
+                        eventInfo.fire_alarm = false;
+                        break;
+                        
+                    case '1134':
+                        // Fire alarm - somente se armado (home ou away)
+                        if (eventInfo.armed_home || eventInfo.armed_away) {
+                            eventInfo.fire_alarm = true;
+                        }
+                        break;
+                        
+                    case '3134':
+                        eventInfo.fire_alarm = false;
+                        break;
+                        
+                    case '1137':
+                        // Fire alarm - somente se armado (home ou away)
+                        if (eventInfo.armed_home || eventInfo.armed_away) {
+                            eventInfo.fire_alarm = true;
+                        }
+                        break;
+                        
+                    case '3137':
+                        eventInfo.fire_alarm = false;
+                        break;
+                        
+                    default:
+                        eventInfo.state = 'UNKNOWN_EVENT';
+                }
+                
+                // Atualizar estado atual
+                currentAlarmState = {
+                    armed_away: eventInfo.armed_away,
+                    armed_night: eventInfo.armed_night,
+                    armed_home: eventInfo.armed_home,
+                    alarm_sounding: eventInfo.alarm_sounding,
+                    fire_alarm: eventInfo.fire_alarm,
+                    eletrificador: eventInfo.eletrificador,
+                    state: eventInfo.state
+                };
+                
+                node.log(`Evento processado: ${eventInfo.evento} - Estado: ${eventInfo.state}`);
+            }
+            
+            return eventInfo;
+        }
+        
         // Função para processar mensagens de entrada (comandos)
         node.on('input', function(msg) {
             if (msg.payload && typeof msg.payload === 'object' && msg.payload.command) {
@@ -170,6 +290,17 @@ module.exports = function(RED) {
                     case 'ARM_STAY':
                         armStay();
                         break;
+                    case 'GET_STATE':
+                        // Retornar estado atual
+                        const stateMsg = {
+                            payload: {
+                                type: 'current_state',
+                                ...currentAlarmState,
+                                timestamp: new Date().toISOString()
+                            }
+                        };
+                        node.send(stateMsg);
+                        break;
                     // case 'ARM':
                     //     arm();
                     //     break;
@@ -178,7 +309,7 @@ module.exports = function(RED) {
                     //     break;
                     default:
                         node.warn(`Comando não reconhecido: ${command}`);
-                        node.warn(`Comandos disponíveis: ARM_AWAY, ARM_STAY`);
+                        node.warn(`Comandos disponíveis: ARM_AWAY, ARM_STAY, GET_STATE`);
                 }
             } else if (msg.payload && typeof msg.payload === 'string') {
                 // Aceitar comando como string simples
@@ -191,12 +322,24 @@ module.exports = function(RED) {
                     case 'ARM_STAY':
                         armStay();
                         break;
+                    case 'GET_STATE':
+                        // Retornar estado atual
+                        const stateMsg = {
+                            payload: {
+                                type: 'current_state',
+                                ...currentAlarmState,
+                                timestamp: new Date().toISOString()
+                            }
+                        };
+                        node.send(stateMsg);
+                        break;
                     default:
                         node.warn(`Comando não reconhecido: ${command}`);
-                        node.warn(`Comandos disponíveis: ARM_AWAY, ARM_STAY`);
+                        node.warn(`Comandos disponíveis: ARM_AWAY, ARM_STAY, GET_STATE`);
                 }
             }
         });
+        
         // Função para enviar keep alive para todos os clientes conectados
         function sendKeepAlive() {
             if (connectedSockets.size > 0) {
@@ -253,8 +396,14 @@ module.exports = function(RED) {
                 msg = [startByte, 0x06, 0x01, 0x40, 0x01];
             } else if (packetSize === 24) {
                 shouldRespond = true;
-                packetType = 'status_24';
-                msg = [startByte, 0x06, 0x01, 0x40, 0x01];
+                packetType = 'event_24';
+                
+                // Processar evento do pacote de 24 bytes
+                const eventData = processEvent24(data);
+                additionalData = eventData;
+                
+                // Resposta específica para eventos (bytes 17-20 do pacote original)
+                msg = [startByte, 0x0A, 0x01, 0x24, 0x01, data[17], data[18], data[19], data[20]];
             } else if (packetSize === 102) {
                 shouldRespond = true;
                 packetType = 'status_102';
@@ -313,6 +462,8 @@ module.exports = function(RED) {
                 // Atualizar status com informação do modelo se disponível
                 if (packetType === 'status_102' && additionalData.modelo) {
                     node.status({fill:"blue", shape:"dot", text:`${additionalData.modelo} processado`});
+                } else if (packetType === 'event_24' && additionalData.evento) {
+                    node.status({fill:"blue", shape:"dot", text:`Evento ${additionalData.evento} - ${additionalData.state}`});
                 } else {
                     node.status({fill:"blue", shape:"dot", text:`${packetType} processado`});
                 }
@@ -384,6 +535,17 @@ module.exports = function(RED) {
                 keepAliveTimer = null;
                 node.log('Keep alive timer parado');
             }
+            
+            // Resetar estado do alarme
+            currentAlarmState = {
+                armed_away: false,
+                armed_night: false,
+                armed_home: false,
+                alarm_sounding: false,
+                fire_alarm: false,
+                eletrificador: false,
+                state: 'DISARMED'
+            };
             
             // Fechar todas as conexões
             connectedSockets.forEach(socket => {
