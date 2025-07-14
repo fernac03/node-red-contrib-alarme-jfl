@@ -225,6 +225,9 @@ module.exports = function(RED) {
                         eventInfo.eletrificador = false;
                         eventInfo.state = 'DISARMED';
                         break;
+                    case '1422':
+                        eventInfo.state = 'PGM acionada pelo usuário';
+                        break;
                     case '1602':
                         eventInfo.state = 'Teste Periodico';
                         break;
@@ -260,7 +263,9 @@ module.exports = function(RED) {
                     case '3137':
                         eventInfo.fire_alarm = false;
                         break;
-                        
+                    case '3422':
+                        eventInfo.state = 'PGM desacionada pelo usuário';
+                        break;
                     default:
                         eventInfo.state = 'UNKNOWN_EVENT';
                 }
