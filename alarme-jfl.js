@@ -15,6 +15,15 @@ module.exports = function(RED) {
         
         let keepAliveTimer = null;
         let connectedSockets = new Set();
+        let clientStartBytes = new Map(); // Armazena o byte inicial de cada cliente
+        
+        // Códigos de comando para o alarme
+        const alarmCommands = {
+            armAway: [0x06, 0x01, 0x4E, 0x01],      // Armar Away
+            armStay: [0x06, 0x01, 0x4F, 0x01],      // Armar Stay
+            // arm: [0x06, 0x01, 0x??, 0x01],        // Armar (código necessário)
+            // disarm: [0x06, 0x01, 0x??, 0x01],     // Desarmar (código necessário)
+        };
         
         // Função para calcular checksum XOR
         function calculateChecksum(buffer) {
@@ -97,12 +106,106 @@ module.exports = function(RED) {
             return { modelo, temEletrificador };
         }
         
+        // Função para enviar comando para todos os clientes conectados
+        function sendAlarmCommand(command, commandName) {
+            if (connectedSockets.size === 0) {
+                node.warn(`Nenhum cliente conectado para enviar comando ${commandName}`);
+                return false;
+            }
+            
+            let successCount = 0;
+            connectedSockets.forEach(socket => {
+                if (!socket.destroyed) {
+                    // Usar o byte inicial específico do cliente
+                    const clientStartByte = clientStartBytes.get(socket) || 0x7B;
+                    const commandMessage = createResponseMessage([clientStartByte, ...command]);
+                    
+                    socket.write(commandMessage, (err) => {
+                        if (err) {
+                            node.error(`Erro ao enviar ${commandName} para ${socket.remoteAddress}: ${err.message}`);
+                        } else {
+                            node.log(`${commandName} enviado para ${socket.remoteAddress}: ${commandMessage.toString('hex')}`);
+                            successCount++;
+                        }
+                    });
+                }
+            });
+            
+            // Enviar dados para saída do nó
+            const msg = {
+                payload: {
+                    type: 'command',
+                    command: commandName,
+                    sent: 'varia por cliente',
+                    sentBytes: command.length + 2, // comando + startByte + checksum
+                    timestamp: new Date().toISOString(),
+                    clientCount: connectedSockets.size,
+                    successCount: successCount
+                }
+            };
+            node.send(msg);
+            
+            node.status({fill:"blue", shape:"dot", text:`${commandName} enviado (${successCount}/${connectedSockets.size} clientes)`});
+            return true;
+        }
+        
+        // Funções específicas para cada comando
+        function armAway() {
+            return sendAlarmCommand(alarmCommands.armAway, 'ARM_AWAY');
+        }
+        
+        function armStay() {
+            return sendAlarmCommand(alarmCommands.armStay, 'ARM_STAY');
+        }
+        
+        // Função para processar mensagens de entrada (comandos)
+        node.on('input', function(msg) {
+            if (msg.payload && typeof msg.payload === 'object' && msg.payload.command) {
+                const command = msg.payload.command.toUpperCase();
+                
+                switch(command) {
+                    case 'ARM_AWAY':
+                        armAway();
+                        break;
+                    case 'ARM_STAY':
+                        armStay();
+                        break;
+                    // case 'ARM':
+                    //     arm();
+                    //     break;
+                    // case 'DISARM':
+                    //     disarm();
+                    //     break;
+                    default:
+                        node.warn(`Comando não reconhecido: ${command}`);
+                        node.warn(`Comandos disponíveis: ARM_AWAY, ARM_STAY`);
+                }
+            } else if (msg.payload && typeof msg.payload === 'string') {
+                // Aceitar comando como string simples
+                const command = msg.payload.toUpperCase();
+                
+                switch(command) {
+                    case 'ARM_AWAY':
+                        armAway();
+                        break;
+                    case 'ARM_STAY':
+                        armStay();
+                        break;
+                    default:
+                        node.warn(`Comando não reconhecido: ${command}`);
+                        node.warn(`Comandos disponíveis: ARM_AWAY, ARM_STAY`);
+                }
+            }
+        });
         // Função para enviar keep alive para todos os clientes conectados
         function sendKeepAlive() {
             if (connectedSockets.size > 0) {
-                const keepAliveMessage = createResponseMessage([0x7B, 0x06, 0x01, 0x40, 0x01]);
                 connectedSockets.forEach(socket => {
                     if (!socket.destroyed) {
+                        // Usar o byte inicial específico do cliente, ou 0x7B como padrão
+                        const clientStartByte = clientStartBytes.get(socket) || 0x7B;
+                        const keepAliveMessage = createResponseMessage([clientStartByte, 0x06, 0x01, 0x40, 0x01]);
+                        
                         socket.write(keepAliveMessage, (err) => {
                             if (err) {
                                 node.error(`Erro ao enviar keep alive para ${socket.remoteAddress}: ${err.message}`);
@@ -117,8 +220,8 @@ module.exports = function(RED) {
                 const msg = {
                     payload: {
                         type: 'keepalive',
-                        sent: keepAliveMessage.toString('hex'),
-                        sentBytes: keepAliveMessage.length,
+                        sent: 'varia por cliente',
+                        sentBytes: 6, // 5 bytes + 1 checksum
                         timestamp: new Date().toISOString(),
                         clientCount: connectedSockets.size
                     }
@@ -137,15 +240,21 @@ module.exports = function(RED) {
             let msg = [];
             let additionalData = {};
             
+            // Obter o byte inicial do pacote recebido (0x7B ou 0x7A)
+            const startByte = data.length > 0 ? data[0] : 0x7B;
+            
+            // Armazenar o byte inicial do cliente para usar no keep alive
+            clientStartBytes.set(socket, startByte);
+            
             // Determinar tipo de pacote baseado no tamanho
             if (packetSize === 5) {
                 shouldRespond = true;
                 packetType = 'heartbeat';
-                msg = [0x7B, 0x06, 0x01, 0x40, 0x01];
+                msg = [startByte, 0x06, 0x01, 0x40, 0x01];
             } else if (packetSize === 24) {
                 shouldRespond = true;
                 packetType = 'status_24';
-                msg = [0x7B, 0x06, 0x01, 0x40, 0x01];
+                msg = [startByte, 0x06, 0x01, 0x40, 0x01];
             } else if (packetSize === 102) {
                 shouldRespond = true;
                 packetType = 'status_102';
@@ -158,22 +267,19 @@ module.exports = function(RED) {
                     modelByte: data[41].toString(16).toUpperCase().padStart(2, '0')
                 };
                 
-                if (data[3] === 0x21) {
-                    msg = [0x7B, 0x07, 0x01, 0x21, 0x01, 0x01];
-                } else {
-                    msg = [0x7B, 0x07, 0x01, 0x21, 0x01, 0x01];
-                }
+                // Sempre responder com esta mensagem para pacotes de 102 bytes
+                msg = [startByte, 0x07, 0x01, 0x21, 0x01, 0x01];
                 
                 node.log(`Modelo identificado: ${modelInfo.modelo} (0x${additionalData.modelByte}) - Eletrificador: ${modelInfo.temEletrificador}`);
                 
             } else if (packetSize >= 118) {
                 shouldRespond = true;
                 packetType = 'extended_status';
-                msg = [0x7B, 0x06, 0x01, 0x40, 0x01];
+                msg = [startByte, 0x06, 0x01, 0x40, 0x01];
             } else {
                 packetType = 'invalid';
                 node.warn(`Tamanho de pacote não suportado: ${packetSize} bytes`);
-                msg = [0x7B, 0x06, 0x01, 0x40, 0x01];
+                msg = [startByte, 0x06, 0x01, 0x40, 0x01];
             }
                         
             if (shouldRespond) {
@@ -229,8 +335,9 @@ module.exports = function(RED) {
                 });
                 
                 socket.on('close', () => {
-                    // Remover socket do conjunto
+                    // Remover socket do conjunto e limpar byte inicial armazenado
                     connectedSockets.delete(socket);
+                    clientStartBytes.delete(socket);
                     node.log(`Cliente desconectado: ${socket.remoteAddress}`);
                     
                     if (connectedSockets.size > 0) {
@@ -243,6 +350,7 @@ module.exports = function(RED) {
                 socket.on('error', (err) => {
                     node.error(`Erro no socket ${socket.remoteAddress}: ${err.message}`);
                     connectedSockets.delete(socket);
+                    clientStartBytes.delete(socket);
                     node.status({fill:"red", shape:"ring", text:"erro socket"});
                 });
             });
@@ -284,6 +392,7 @@ module.exports = function(RED) {
                 }
             });
             connectedSockets.clear();
+            clientStartBytes.clear();
             
             if (server) {
                 server.close(() => {
