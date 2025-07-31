@@ -1,0 +1,428 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { Shield, ShieldAlert, ShieldCheck, Wifi, WifiOff, Clock, Users, Zap, Home, AlertTriangle, CheckCircle, XCircle, Phone, Mail } from 'lucide-react';
+
+const JFLDashboard = () => {
+  // Estados principais
+  const [alarmState, setAlarmState] = useState({
+    armed_away: false,
+    armed_night: false,
+    armed_home: false,
+    alarm_sounding: false,
+    fire_alarm: false,
+    eletrificador: false,
+    state: 'DISARMED'
+  });
+
+  const [systemInfo, setSystemInfo] = useState({
+    model: 'Conectando...',
+    hasElectrifier: false,
+    connectedClients: 0,
+    clients: []
+  });
+
+  const [isConnected, setIsConnected] = useState(false);
+  const [code, setCode] = useState('');
+  const [alerts, setAlerts] = useState([]);
+  const [lastUpdate, setLastUpdate] = useState(null);
+  const [commandInProgress, setCommandInProgress] = useState(false);
+
+  // Simulação de conexão WebSocket
+  useEffect(() => {
+    // Simular conexão após 1 segundo
+    const timer = setTimeout(() => {
+      setIsConnected(true);
+      setSystemInfo({
+        model: 'Active-32 Duo',
+        hasElectrifier: true,
+        connectedClients: 1,
+        clients: [{ ip: '192.168.1.100', port: 54321, lastSeen: new Date().toISOString() }]
+      });
+      addAlert('Conexão estabelecida com a central JFL', 'success');
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Adicionar alerta
+  const addAlert = useCallback((message, type = 'info', priority = 'normal') => {
+    const newAlert = {
+      id: Date.now() + Math.random(),
+      message,
+      type,
+      priority,
+      timestamp: new Date().toISOString()
+    };
+
+    setAlerts(prev => [newAlert, ...prev.slice(0, 19)]); // Manter apenas 20 alertas
+  }, []);
+
+  // Enviar comando
+  const sendCommand = useCallback(async (command) => {
+    if (!isConnected) {
+      addAlert('Sistema não conectado', 'error');
+      return;
+    }
+
+    if (command === 'DISARM' && code.length < 4) {
+      addAlert('Digite o código para desarmar (mín. 4 dígitos)', 'warning');
+      return;
+    }
+
+    setCommandInProgress(true);
+
+    try {
+      // Simular envio via API
+      const response = await fetch('/jfl/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command, code: code || null })
+      });
+
+      if (response.ok) {
+        addAlert(`Comando ${command} enviado com sucesso`, 'success');
+        
+        // Simular resposta da central
+        setTimeout(() => {
+          updateAlarmState(command);
+        }, 1500);
+      } else {
+        const error = await response.json();
+        addAlert(`Erro: ${error.error}`, 'error');
+      }
+    } catch (error) {
+      // Fallback para demonstração
+      addAlert(`Comando ${command} enviado (modo demo)`, 'info');
+      setTimeout(() => {
+        updateAlarmState(command);
+      }, 1500);
+    }
+
+    setCode('');
+    setCommandInProgress(false);
+  }, [isConnected, code]);
+
+  // Atualizar estado do alarme
+  const updateAlarmState = useCallback((command) => {
+    const now = new Date().toISOString();
+    setLastUpdate(now);
+
+    switch (command) {
+      case 'ARM_AWAY':
+        setAlarmState({
+          armed_away: true,
+          armed_night: false,
+          armed_home: false,
+          alarm_sounding: false,
+          fire_alarm: false,
+          eletrificador: true,
+          state: 'ARMED_AWAY'
+        });
+        addAlert('Sistema armado totalmente', 'success', 'high');
+        break;
+
+      case 'ARM_STAY':
+        setAlarmState({
+          armed_away: false,
+          armed_night: false,
+          armed_home: true,
+          alarm_sounding: false,
+          fire_alarm: false,
+          eletrificador: false,
+          state: 'ARMED_HOME'
+        });
+        addAlert('Sistema armado parcialmente', 'success', 'high');
+        break;
+
+      case 'DISARM':
+        setAlarmState({
+          armed_away: false,
+          armed_night: false,
+          armed_home: false,
+          alarm_sounding: false,
+          fire_alarm: false,
+          eletrificador: false,
+          state: 'DISARMED'
+        });
+        addAlert('Sistema desarmado', 'success', 'high');
+        break;
+    }
+  }, []);
+
+  // Manipular entrada do teclado
+  const handleKeypad = useCallback((value) => {
+    if (value === 'C') {
+      setCode('');
+    } else if (value === '←') {
+      setCode(prev => prev.slice(0, -1));
+    } else if (code.length < 10) {
+      setCode(prev => prev + value);
+    }
+  }, [code]);
+
+  // Simular eventos aleatórios
+  useEffect(() => {
+    if (!isConnected) return;
+
+    const events = [
+      { message: 'Teste periódico realizado', type: 'info' },
+      { message: 'Sensor porta principal ativado', type: 'warning' },
+      { message: 'Zona 1 restaurada', type: 'success' },
+      { message: 'Bateria backup OK', type: 'info' }
+    ];
+
+    const interval = setInterval(() => {
+      if (Math.random() < 0.2) { // 20% de chance
+        const event = events[Math.floor(Math.random() * events.length)];
+        addAlert(event.message, event.type);
+      }
+    }, 8000);
+
+    return () => clearInterval(interval);
+  }, [isConnected, addAlert]);
+
+  // Obter cor e ícone do status
+  const getStatusInfo = () => {
+    if (alarmState.alarm_sounding || alarmState.fire_alarm) {
+      return {
+        color: 'text-red-400',
+        bg: 'bg-red-500/20 border-red-500/50',
+        icon: ShieldAlert,
+        text: alarmState.fire_alarm ? 'ALARME INCÊNDIO' : 'ALARME ATIVADO',
+        description: 'Situação de emergência'
+      };
+    }
+
+    if (alarmState.armed_away) {
+      return {
+        color: 'text-orange-400',
+        bg: 'bg-orange-500/20 border-orange-500/50',
+        icon: Shield,
+        text: 'ARMADO TOTAL',
+        description: 'Proteção completa ativa'
+      };
+    }
+
+    if (alarmState.armed_home) {
+      return {
+        color: 'text-yellow-400',
+        bg: 'bg-yellow-500/20 border-yellow-500/50',
+        icon: Home,
+        text: 'ARMADO PARCIAL',
+        description: 'Proteção perimetral ativa'
+      };
+    }
+
+    return {
+      color: 'text-green-400',
+      bg: 'bg-green-500/20 border-green-500/50',
+      icon: ShieldCheck,
+      text: 'DESARMADO',
+      description: 'Sistema seguro'
+    };
+  };
+
+  const statusInfo = getStatusInfo();
+  const StatusIcon = statusInfo.icon;
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-4">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-center mb-2 bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+            Central de Alarme JFL
+          </h1>
+          <div className="flex items-center justify-center space-x-4">
+            <div className={`flex items-center space-x-2 px-3 py-1 rounded-full ${isConnected ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
+              {isConnected ? <Wifi className="w-4 h-4 text-green-400" /> : <WifiOff className="w-4 h-4 text-red-400" />}
+              <span className="text-sm">{isConnected ? 'Conectado' : 'Desconectado'}</span>
+            </div>
+            <div className="flex items-center space-x-2 px-3 py-1 rounded-full bg-blue-500/20">
+              <Users className="w-4 h-4 text-blue-400" />
+              <span className="text-sm">{systemInfo.connectedClients} cliente(s)</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Painel de Status */}
+          <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-2xl p-6">
+            <h2 className="text-xl font-semibold mb-6 flex items-center">
+              <Shield className="w-6 h-6 mr-2 text-blue-400" />
+              Status do Sistema
+            </h2>
+
+            {/* Status Principal */}
+            <div className={`${statusInfo.bg} border-2 rounded-xl p-6 mb-6 text-center ${alarmState.alarm_sounding || alarmState.fire_alarm ? 'animate-pulse' : ''}`}>
+              <StatusIcon className={`w-16 h-16 mx-auto mb-4 ${statusInfo.color}`} />
+              <h3 className={`text-3xl font-bold mb-2 ${statusInfo.color}`}>
+                {statusInfo.text}
+              </h3>
+              <p className="text-slate-300">{statusInfo.description}</p>
+              
+              {/* Indicadores adicionais */}
+              <div className="flex justify-center space-x-4 mt-4">
+                {alarmState.eletrificador && (
+                  <div className="flex items-center space-x-1 text-yellow-400">
+                    <Zap className="w-4 h-4" />
+                    <span className="text-xs">Eletrificador</span>
+                  </div>
+                )}
+                {lastUpdate && (
+                  <div className="flex items-center space-x-1 text-slate-400">
+                    <Clock className="w-4 h-4" />
+                    <span className="text-xs">
+                      {new Date(lastUpdate).toLocaleTimeString('pt-BR')}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Informações do Sistema */}
+            <div className="bg-slate-700/50 rounded-lg p-4 mb-6">
+              <h4 className="font-semibold mb-3">Informações do Sistema</h4>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Modelo:</span>
+                  <span>{systemInfo.model}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Eletrificador:</span>
+                  <span>{systemInfo.hasElectrifier ? 'Sim' : 'Não'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Clientes:</span>
+                  <span>{systemInfo.connectedClients}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Alertas */}
+            <div>
+              <h4 className="font-semibold mb-3">Alertas Recentes</h4>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {alerts.slice(0, 5).map((alert) => (
+                  <div
+                    key={alert.id}
+                    className={`p-3 rounded-lg border-l-4 ${
+                      alert.type === 'error' ? 'bg-red-500/10 border-red-500' :
+                      alert.type === 'warning' ? 'bg-yellow-500/10 border-yellow-500' :
+                      alert.type === 'success' ? 'bg-green-500/10 border-green-500' :
+                      'bg-blue-500/10 border-blue-500'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <p className="text-sm">{alert.message}</p>
+                      {alert.type === 'error' && <XCircle className="w-4 h-4 text-red-400 flex-shrink-0 ml-2" />}
+                      {alert.type === 'warning' && <AlertTriangle className="w-4 h-4 text-yellow-400 flex-shrink-0 ml-2" />}
+                      {alert.type === 'success' && <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0 ml-2" />}
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1">
+                      {new Date(alert.timestamp).toLocaleTimeString('pt-BR')}
+                    </p>
+                  </div>
+                ))}
+                {alerts.length === 0 && (
+                  <p className="text-slate-400 text-sm text-center py-4">Nenhum alerta recente</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Painel de Controle */}
+          <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-2xl p-6">
+            <h2 className="text-xl font-semibold mb-6">Painel de Controle</h2>
+
+            {/* Display do Código */}
+            <div className="mb-6">
+              <label className="block text-sm text-slate-400 mb-2">Código de Acesso</label>
+              <input
+                type="password"
+                value="•".repeat(code.length)}
+                readOnly
+                placeholder="Digite o código"
+                className="w-full p-4 bg-slate-700/50 border border-slate-600 rounded-lg text-center text-xl tracking-widest focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
+            {/* Teclado */}
+            <div className="grid grid-cols-3 gap-3 mb-6">
+              {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '←'].map((key) => (
+                <button
+                  key={key}
+                  onClick={() => handleKeypad(key)}
+                  className="aspect-square bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded-lg text-xl font-semibold transition-colors"
+                >
+                  {key}
+                </button>
+              ))}
+            </div>
+
+            {/* Botões de Comando */}
+            <div className="space-y-3">
+              <button
+                onClick={() => sendCommand('ARM_AWAY')}
+                disabled={!isConnected || commandInProgress}
+                className="w-full p-4 bg-red-600 hover:bg-red-700 disabled:bg-slate-600 disabled:cursor-not-allowed rounded-lg font-semibold transition-colors flex items-center justify-center space-x-2"
+              >
+                <Shield className="w-5 h-5" />
+                <span>Armar Total</span>
+              </button>
+
+              <button
+                onClick={() => sendCommand('ARM_STAY')}
+                disabled={!isConnected || commandInProgress}
+                className="w-full p-4 bg-orange-600 hover:bg-orange-700 disabled:bg-slate-600 disabled:cursor-not-allowed rounded-lg font-semibold transition-colors flex items-center justify-center space-x-2"
+              >
+                <Home className="w-5 h-5" />
+                <span>Armar Parcial</span>
+              </button>
+
+              <button
+                onClick={() => sendCommand('DISARM')}
+                disabled={!isConnected || commandInProgress || code.length < 4}
+                className="w-full p-4 bg-green-600 hover:bg-green-700 disabled:bg-slate-600 disabled:cursor-not-allowed rounded-lg font-semibold transition-colors flex items-center justify-center space-x-2"
+              >
+                <ShieldCheck className="w-5 h-5" />
+                <span>Desarmar</span>
+              </button>
+            </div>
+
+            {commandInProgress && (
+              <div className="mt-4 text-center">
+                <div className="inline-flex items-center space-x-2 text-blue-400">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-400"></div>
+                  <span className="text-sm">Enviando comando...</span>
+                </div>
+              </div>
+            )}
+
+            {/* Botões de Emergência */}
+            <div className="mt-6 pt-6 border-t border-slate-700">
+              <h4 className="font-semibold mb-3 text-red-400">Emergência</h4>
+              <div className="grid grid-cols-2 gap-3">
+                <button className="p-3 bg-red-600/20 border border-red-600 hover:bg-red-600/30 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center space-x-1">
+                  <Phone className="w-4 h-4" />
+                  <span>Polícia</span>
+                </button>
+                <button className="p-3 bg-orange-600/20 border border-orange-600 hover:bg-orange-600/30 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center space-x-1">
+                  <Mail className="w-4 h-4" />
+                  <span>Bombeiros</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="mt-8 text-center text-slate-400 text-sm">
+          <p>Sistema de Segurança JFL - Node-RED Integration</p>
+          <p>Última atualização: {lastUpdate ? new Date(lastUpdate).toLocaleString('pt-BR') : 'Aguardando...'}</p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default JFLDashboard;
