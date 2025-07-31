@@ -9,7 +9,7 @@
             enableKeepAlive: { value: true },
             keepAliveInterval: { value: 30000, required: true, validate: RED.validators.number() }
         },
-        inputs: 0,
+        inputs: 1,
         outputs: 1,
         icon: "bridge.png",
         label: function() {
@@ -44,60 +44,4 @@
 </script>
 
 <script type="text/html" data-help-name="alarme-jfl">
-    <p>Nó para comunicação com central de alarme JFL via TCP socket.</p>
-    
-    <h3>Detalhes</h3>
-    <p>Este nó cria um servidor TCP que escuta conexões na porta especificada. 
-    Processa diferentes tipos de pacotes baseado no tamanho e responde automaticamente com 
-    a mensagem <code>0x7B 0x06 0x01 0x40 0x01</code> seguida de um checksum XOR.</p>
-    
-    <h3>Tipos de Pacotes Suportados</h3>
-    <ul>
-        <li><strong>5 bytes</strong> - Heartbeat/Keep alive</li>
-        <li><strong>24 bytes</strong> - Status básico</li>
-        <li><strong>102 bytes</strong> - Status estendido</li>
-        <li><strong>≥118 bytes</strong> - Status completo/eventos</li>
-    </ul>
-    
-    <h3>Configuração</h3>
-    <dl class="message-properties">
-        <dt>Port <span class="property-type">number</span></dt>
-        <dd>Porta TCP onde o servidor irá escutar (padrão: 9999)</dd>
-        
-        <dt>Host <span class="property-type">string</span></dt>
-        <dd>Endereço IP para bind do servidor (padrão: 0.0.0.0 - todas as interfaces)</dd>
-        
-        <dt>Keep Alive <span class="property-type">boolean</span></dt>
-        <dd>Habilita envio automático de keep alive para clientes conectados</dd>
-        
-        <dt>Intervalo <span class="property-type">number</span></dt>
-        <dd>Intervalo em milissegundos para envio do keep alive (padrão: 30000ms)</dd>
-    </dl>
-    
-    <h3>Saída</h3>
-    <dl class="message-properties">
-        <dt>payload <span class="property-type">object</span></dt>
-        <dd>Objeto contendo:
-            <ul>
-                <li><code>type</code> - tipo do pacote (heartbeat, status_24, status_102, extended_status, keepalive)</li>
-                <li><code>received</code> - dados recebidos em hex (se aplicável)</li>
-                <li><code>sent</code> - resposta enviada em hex</li>
-                <li><code>receivedBytes</code> - tamanho do pacote recebido</li>
-                <li><code>sentBytes</code> - tamanho da resposta</li>
-                <li><code>timestamp</code> - timestamp da comunicação</li>
-                <li><code>clientIP</code> - IP do cliente (para pacotes recebidos)</li>
-                <li><code>clientCount</code> - número de clientes conectados (para keep alive)</li>
-            </ul>
-        </dd>
-    </dl>
-    
-    <h3>Status</h3>
-    <p>O nó mostra diferentes status:</p>
-    <ul>
-        <li><strong>Escutando :porta</strong> - servidor ativo, aguardando cliente</li>
-        <li><strong>X cliente(s) conectado(s)</strong> - número de clientes ativos</li>
-        <li><strong>Tipo processado</strong> - pacote processado com sucesso</li>
-        <li><strong>Keep alive enviado</strong> - keep alive transmitido</li>
-        <li><strong>Erro</strong> - problema na comunicação</li>
-    </ul>
-</script>
+    <p>Nó para comunicação com central de
