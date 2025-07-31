@@ -1,0 +1,149 @@
+[
+    {
+        "id": "jfl-main-tab",
+        "type": "tab",
+        "label": "Central JFL - Sistema Completo",
+        "disabled": false,
+        "info": "Sistema completo de monitoramento e controle para central de alarme JFL",
+        "env": []
+    },
+    {
+        "id": "jfl-central",
+        "type": "alarme-jfl",
+        "z": "jfl-main-tab",
+        "name": "Central JFL Principal",
+        "port": 9999,
+        "host": "0.0.0.0",
+        "enableKeepAlive": true,
+        "keepAliveInterval": 30000,
+        "x": 180,
+        "y": 200,
+        "wires": [["process-jfl-data", "websocket-broadcast", "debug-jfl"]]
+    },
+    {
+        "id": "process-jfl-data",
+        "type": "function",
+        "z": "jfl-main-tab",
+        "name": "Processar Dados JFL",
+        "func": "// Processar e distribuir dados da central JFL\nconst payload = msg.payload;\n\n// Enriquecer dados com informações adicionais\nif (!payload.localTimestamp) {\n    payload.localTimestamp = new Date().toISOString();\n}\n\n// Determinar prioridade baseada no tipo e conteúdo\nlet priority = 'normal';\nif (payload.type === 'event_24') {\n    if (payload.alarm_sounding || payload.fire_alarm) {\n        priority = 'critical';\n    } else if (payload.armed_away || payload.armed_home) {\n        priority = 'high';\n    }\n}\n\npayload.priority = priority;\n\n// Armazenar estado atual no contexto do fluxo\nif (payload.type === 'event_24' || payload.type === 'current_state') {\n    const currentState = {\n        armed_away: payload.armed_away || false,\n        armed_night: payload.armed_night || false,\n        armed_home: payload.armed_home || false,\n        alarm_sounding: payload.alarm_sounding || false,\n        fire_alarm: payload.fire_alarm || false,\n        eletrificador: payload.eletrificador || false,\n        state: payload.state || 'UNKNOWN',\n        lastUpdate: payload.timestamp || payload.localTimestamp\n    };\n    flow.set('current_alarm_state', currentState);\n}\n\n// Armazenar informações do modelo\nif (payload.type === 'status_102' && payload.modelo) {\n    flow.set('jfl_model', {\n        modelo: payload.modelo,\n        temEletrificador: payload.temEletrificador,\n        modelByte: payload.modelByte,\n        lastDetected: payload.timestamp\n    });\n}\n\n// Distribuir para diferentes saídas baseado no tipo\nswitch(payload.type) {\n    case 'event_24':\n        msg.topic = 'jfl/events';\n        return [msg, null, null, null]; // Saída 1: Eventos\n        \n    case 'status_102':\n        msg.topic = 'jfl/status';\n        return [null, msg, null, null]; // Saída 2: Status\n        \n    case 'command':\n        msg.topic = 'jfl/commands';\n        return [null, null, msg, null]; // Saída 3: Comandos\n        \n    case 'keepalive':\n        msg.topic = 'jfl/keepalive';\n        return [null, null, null, msg]; // Saída 4: Keep alive\n        \n    case 'current_state':\n    case 'error':\n    case 'event_log':\n        msg.topic = 'jfl/system';\n        return [msg, msg, msg, null]; // Todas as saídas exceto keep alive\n        \n    default:\n        msg.topic = 'jfl/other';\n        return [null, msg, null, null]; // Saída 2: Status\n}",
+        "outputs": 4,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 400,
+        "y": 200,
+        "wires": [
+            ["handle-events", "store-events"],
+            ["handle-status", "mqtt-status"],
+            ["handle-commands", "mqtt-commands"],
+            ["mqtt-keepalive"]
+        ]
+    },
+    {
+        "id": "handle-events",
+        "type": "function",
+        "z": "jfl-main-tab",
+        "name": "Processar Eventos",
+        "func": "// Processar eventos específicos da central\nconst payload = msg.payload;\n\n// Verificar eventos críticos\nif (payload.priority === 'critical') {\n    // Preparar alerta crítico\n    const criticalAlert = {\n        topic: 'jfl/alert/critical',\n        payload: {\n            type: 'critical_alert',\n            title: payload.fire_alarm ? 'ALARME DE INCÊNDIO' : 'ALARME DE INTRUSÃO',\n            message: payload.description || 'Situação crítica detectada',\n            evento: payload.evento,\n            zone: payload.zone,\n            timestamp: payload.timestamp,\n            state: payload.state,\n            clientIP: payload.clientIP,\n            priority: 'critical'\n        }\n    };\n    \n    // Saída 1: Alertas críticos\n    // Saída 2: Todos os eventos\n    return [criticalAlert, msg];\n}\n\n// Eventos de alta prioridade (armamento/desarmamento)\nif (payload.priority === 'high') {\n    const highAlert = {\n        topic: 'jfl/alert/high',\n        payload: {\n            type: 'status_change',\n            title: 'Mudança de Status',\n            message: payload.description,\n            evento: payload.evento,\n            state: payload.state,\n            timestamp: payload.timestamp,\n            priority: 'high'\n        }\n    };\n    \n    return [highAlert, msg];\n}\n\n// Eventos normais apenas na saída 2\nreturn [null, msg];",
+        "outputs": 2,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 620,
+        "y": 160,
+        "wires": [
+            ["send-notifications", "websocket-alert"],
+            ["mqtt-events"]
+        ]
+    },
+    {
+        "id": "handle-status",
+        "type": "function",
+        "z": "jfl-main-tab",
+        "name": "Processar Status",
+        "func": "// Processar informações de status do sistema\nconst payload = msg.payload;\n\n// Armazenar informações de clientes conectados\nif (payload.clientIP) {\n    const clients = flow.get('connected_clients') || [];\n    const clientInfo = {\n        ip: payload.clientIP,\n        port: payload.clientPort,\n        lastSeen: payload.timestamp,\n        model: payload.modelo || 'N/A',\n        startByte: payload.received ? payload.received.substring(0, 2) : 'N/A'\n    };\n    \n    // Atualizar ou adicionar cliente\n    const existingIndex = clients.findIndex(c => c.ip === payload.clientIP);\n    if (existingIndex >= 0) {\n        clients[existingIndex] = clientInfo;\n    } else {\n        clients.push(clientInfo);\n    }\n    \n    // Remover clientes antigos (mais de 5 minutos sem comunicação)\n    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();\n    const activeClients = clients.filter(c => c.lastSeen > fiveMinutesAgo);\n    \n    flow.set('connected_clients', activeClients);\n    \n    // Atualizar informações no payload\n    payload.activeClients = activeClients.length;\n    payload.clientsInfo = activeClients;\n}\n\n// Estatísticas do sistema\nconst stats = flow.get('system_stats') || {\n    totalEvents: 0,\n    totalCommands: 0,\n    criticalEvents: 0,\n    lastReset: new Date().toISOString()\n};\n\nif (payload.type === 'event_24') {\n    stats.totalEvents++;\n    if (payload.priority === 'critical') {\n        stats.criticalEvents++;\n    }\n} else if (payload.type === 'command') {\n    stats.totalCommands++;\n}\n\nflow.set('system_stats', stats);\npayload.systemStats = stats;\n\n// Status do nó baseado no modelo identificado\nif (payload.modelo) {\n    node.status({\n        fill: \"blue\",\n        shape: \"dot\",\n        text: `${payload.modelo} - ${payload.activeClients || 0} clientes`\n    });\n}\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 620,
+        "y": 220,
+        "wires": [["mqtt-status"]]
+    },
+    {
+        "id": "handle-commands",
+        "type": "function",
+        "z": "jfl-main-tab",
+        "name": "Processar Comandos",
+        "func": "// Processar comandos enviados para auditoria\nconst payload = msg.payload;\n\n// Criar entrada de auditoria\nconst auditEntry = {\n    id: Date.now() + Math.random(),\n    timestamp: payload.timestamp,\n    command: payload.command,\n    success: payload.successCount > 0,\n    clientCount: payload.clientCount,\n    successCount: payload.successCount,\n    source: payload.source || 'unknown',\n    user: payload.userCode ? 'authenticated' : 'system'\n};\n\n// Armazenar histórico de comandos\nconst commandHistory = flow.get('command_history') || [];\ncommandHistory.unshift(auditEntry); // Adicionar no início\n\n// Manter apenas os últimos 100 comandos\nif (commandHistory.length > 100) {\n    commandHistory.splice(100);\n}\n\nflow.set('command_history', commandHistory);\n\n// Adicionar informações de auditoria ao payload\npayload.auditEntry = auditEntry;\npayload.commandHistory = commandHistory.slice(0, 10); // Últimos 10 comandos\n\n// Status visual do nó\nif (payload.successCount > 0) {\n    node.status({\n        fill: \"green\",\n        shape: \"dot\",\n        text: `${payload.command} ✓ (${payload.successCount}/${payload.clientCount})`\n    });\n    \n    // Limpar status após 3 segundos\n    setTimeout(() => {\n        node.status({});\n    }, 3000);\n} else {\n    node.status({\n        fill: \"red\",\n        shape: \"ring\",\n        text: `${payload.command} ✗ Falha`\n    });\n    \n    setTimeout(() => {\n        node.status({});\n    }, 5000);\n}\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 620,
+        "y": 280,
+        "wires": [["mqtt-commands"]]
+    },
+    {
+        "id": "http-api-control",
+        "type": "http in",
+        "z": "jfl-main-tab",
+        "name": "API Controle JFL",
+        "url": "/jfl/control",
+        "method": "post",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 180,
+        "y": 400,
+        "wires": [["validate-api-command"]]
+    },
+    {
+        "id": "validate-api-command",
+        "type": "function",
+        "z": "jfl-main-tab",
+        "name": "Validar Comando API",
+        "func": "// Validar comando recebido via HTTP API\nconst body = msg.payload;\nconst headers = msg.req.headers;\nconst clientIP = msg.req.ip || msg.req.connection.remoteAddress;\n\n// Log da requisição\nnode.log(`API Request from ${clientIP}: ${JSON.stringify(body)}`);\n\n// Validar estrutura da requisição\nif (!body || typeof body !== 'object') {\n    msg.statusCode = 400;\n    msg.payload = {\n        error: 'Corpo da requisição deve ser um objeto JSON',\n        example: { command: 'ARM_AWAY', code: '1234' }\n    };\n    return [null, msg];\n}\n\n// Comandos válidos\nconst validCommands = ['ARM_AWAY', 'ARM_STAY', 'DISARM', 'GET_STATE', 'CLEAR_ALERTS'];\nconst command = body.command ? body.command.toString().toUpperCase() : '';\n\nif (!command || !validCommands.includes(command)) {\n    msg.statusCode = 400;\n    msg.payload = {\n        error: 'Comando inválido ou ausente',\n        validCommands: validCommands,\n        received: body.command\n    };\n    return [null, msg];\n}\n\n// Validar código para desarme\nif (command === 'DISARM') {\n    if (!body.code || body.code.toString().length < 4) {\n        msg.statusCode = 400;\n        msg.payload = {\n            error: 'Código de usuário obrigatório para desarmar (mínimo 4 dígitos)',\n            command: command\n        };\n        return [null, msg];\n    }\n}\n\n// Preparar comando para envio\nmsg.payload = {\n    command: command,\n    code: body.code ? body.code.toString() : null,\n    source: 'http_api',\n    clientIP: clientIP,\n    userAgent: headers['user-agent'] || 'unknown',\n    timestamp: new Date().toISOString()\n};\n\n// Preparar resposta de sucesso\nmsg.httpResponse = {\n    statusCode: 200,\n    payload: {\n        success: true,\n        message: `Comando ${command} aceito para processamento`,\n        command: command,\n        timestamp: msg.payload.timestamp,\n        requestId: Date.now().toString(36)\n    }\n};\n\nreturn [msg, null]; // Saída 1: Comando válido",
+        "outputs": 2,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 400,
+        "y": 400,
+        "wires": [
+            ["jfl-central", "send-http-response"],
+            ["send-http-response"]
+        ]
+    },
+    {
+        "id": "send-http-response",
+        "type": "function",
+        "z": "jfl-main-tab",
+        "name": "Resposta HTTP",
+        "func": "// Preparar resposta HTTP\nif (msg.httpResponse) {\n    // Resposta de sucesso preparada na validação\n    msg.statusCode = msg.httpResponse.statusCode;\n    msg.payload = msg.httpResponse.payload;\n} else if (!msg.statusCode) {\n    // Resposta de erro já preparada\n    msg.statusCode = msg.statusCode || 500;\n}\n\n// Headers de resposta\nmsg.headers = {\n    'Content-Type': 'application/json',\n    'Access-Control-Allow-Origin': '*',\n    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',\n    'Access-Control-Allow-Headers': 'Content-Type'\n};\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,\n        "noerr": 0,\n        "initialize": "",\n        "finalize": "",\n        "libs": [],\n        "x": 620,\n        "y": 400,\n        "wires": [["http-response"]]\n    },\n    {\n        "id": "http-response",\n        "type": "http response",\n        "z": "jfl-main-tab",\n        "name": "HTTP Response",\n        "statusCode": "",\n        "headers": {},\n        "x": 800,\n        "y": 400,\n        "wires": []\n    },\n    {\n        "id": "http-api-status",\n        "type": "http in",\n        "z": "jfl-main-tab",\n        "name": "API Status JFL",\n        "url": "/jfl/status",\n        "method": "get",\n        "upload": false,\n        "swaggerDoc": "",\n        "x": 180,\n        "y": 480,\n        "wires": [["get-system-status"]]\n    },\n    {\n        "id": "get-system-status",\n        "type": "function",\n        "z": "jfl-main-tab",\n        "name": "Status do Sistema",\n        "func": "// Retornar status completo do sistema\nconst currentState = flow.get('current_alarm_state') || {\n    armed_away: false,\n    armed_night: false,\n    armed_home: false,\n    alarm_sounding: false,\n    fire_alarm: false,\n    eletrificador: false,\n    state: 'UNKNOWN',\n    lastUpdate: null\n};\n\nconst modelInfo = flow.get('jfl_model') || {\n    modelo: 'Não identificado',\n    temEletrificador: false,\n    modelByte: 'N/A',\n    lastDetected: null\n};\n\nconst connectedClients = flow.get('connected_clients') || [];\nconst systemStats = flow.get('system_stats') || {\n    totalEvents: 0,\n    totalCommands: 0,\n    criticalEvents: 0,\n    lastReset: new Date().toISOString()\n};\n\nconst commandHistory = flow.get('command_history') || [];\n\n// Preparar resposta completa\nmsg.payload = {\n    system: {\n        status: 'online',\n        uptime: process.uptime(),\n        timestamp: new Date().toISOString(),\n        version: '2.0.0'\n    },\n    jfl: {\n        model: modelInfo.modelo,\n        hasElectrifier: modelInfo.temEletrificador,\n        modelByte: modelInfo.modelByte,\n        lastModelDetection: modelInfo.lastDetected,\n        connectedClients: connectedClients.length,\n        clients: connectedClients\n    },\n    alarmState: currentState,\n    statistics: systemStats,
+    recentCommands: commandHistory.slice(0, 5),
+    health: {
+        clientsConnected: connectedClients.length > 0,
+        lastActivity: currentState.lastUpdate,
+        criticalAlertsToday: systemStats.criticalEvents
+    }
+};
+
+msg.statusCode = 200;
+msg.headers = {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*'
+};
+
+return msg;
