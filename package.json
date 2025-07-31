@@ -1,7 +1,7 @@
 {
     "name": "node-red-contrib-alarme-jfl",
-    "version": "1.0.0",
-    "description": "Nó Node-RED para comunicação com central de alarme JFL via TCP socket",
+    "version": "2.0.0",
+    "description": "Nó Node-RED para comunicação completa com central de alarme JFL via TCP socket",
     "main": "alarme-jfl.js",
     "scripts": {
         "test": "echo \"Error: no test specified\" && exit 1"
@@ -12,18 +12,41 @@
         "jfl",
         "tcp",
         "socket",
-        "security"
+        "security",
+        "active",
+        "m300",
+        "eletrificador",
+        "monitoramento",
+        "automacao"
     ],
-    "author": "Seu Nome",
+    "author": {
+        "name": "Desenvolvedor JFL",
+        "email": "dev@exemplo.com"
+    },
     "license": "MIT",
     "node-red": {
+        "version": ">=2.0.0",
         "nodes": {
             "alarme-jfl": "alarme-jfl.js"
         }
     },
     "dependencies": {},
+    "devDependencies": {},
     "repository": {
         "type": "git",
-        "url": "https://github.com/seunome/node-red-contrib-alarme-jfl.git"
-    }
+        "url": "https://github.com/usuario/node-red-contrib-alarme-jfl.git"
+    },
+    "bugs": {
+        "url": "https://github.com/usuario/node-red-contrib-alarme-jfl/issues"
+    },
+    "homepage": "https://github.com/usuario/node-red-contrib-alarme-jfl#readme",
+    "engines": {
+        "node": ">=14.0.0"
+    },
+    "files": [
+        "alarme-jfl.js",
+        "alarme-jfl.html",
+        "README.md",
+        "LICENSE"
+    ]
 }
