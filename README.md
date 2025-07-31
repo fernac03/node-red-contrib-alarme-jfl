@@ -1,140 +1,168 @@
-# Central de Alarme JFL - Integração Node-RED
+# 🛡️ Central de Alarme JFL - Integração Node-RED
 
-## Visão Geral
+[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://github.com/usuario/node-red-contrib-alarme-jfl)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Node-RED](https://img.shields.io/badge/Node--RED-%3E%3D2.0.0-red.svg)](https://nodered.org/)
 
-Esta solução completa permite controlar e monitorar uma central de alarme JFL através do Node-RED, oferecendo:
+Sistema completo de monitoramento e controle para centrais de alarme JFL através do Node-RED, oferecendo interface web moderna, APIs REST/WebSocket/MQTT e notificações em tempo real.
 
-- **Controle remoto** via HTTP API, WebSocket e MQTT
-- **Interface web** responsiva com teclado virtual
-- **Dashboard React** avançado para monitoramento
-- **Alertas em tempo real** com diferentes níveis de prioridade
-- **Log de eventos** e auditoria de comandos
-- **Notificações** por email e outros canais
+## 🚀 Características Principais
 
-## Componentes da Solução
+- ✅ **Comunicação TCP completa** com central JFL
+- 🎛️ **Interface web responsiva** com teclado virtual
+- 📱 **Dashboard React avançado** para monitoramento
+- 🔗 **APIs múltiplas**: HTTP REST, WebSocket, MQTT
+- 📧 **Notificações**: Email, Telegram, SMS
+- 📊 **Monitoramento em tempo real** de eventos
+- 🔒 **Sistema de segurança** com validação de códigos
+- 📝 **Log completo** e auditoria de comandos
+- 🏥 **Monitoramento de saúde** do sistema
 
-### 1. Nó Node-RED Customizado (`alarme-jfl`)
+## 🏭 Modelos JFL Suportados
 
-**Funcionalidades:**
-- Servidor TCP para comunicação com central JFL
-- Processamento automático de diferentes tipos de pacotes
-- Identificação automática do modelo da central
-- Comandos: ARM_AWAY, ARM_STAY, DISARM, GET_STATE
-- Keep-alive automático
-- Log detalhado de eventos
+| Modelo | Código | Eletrificador | Status |
+|--------|--------|---------------|--------|
+| Active-32 Duo | 0xA0 | ✅ | ✅ Testado |
+| Active 20 Ultra/GPRS | 0xA1 | ✅ | ✅ Testado |
+| Active 8 Ultra | 0xA2 | ❌ | ✅ Testado |
+| Active 20 Ethernet | 0xA3 | ✅ | ✅ Testado |
+| Active 100 Bus | 0xA4 | ✅ | 🧪 Experimental |
+| Active 20 Bus | 0xA5 | ✅ | 🧪 Experimental |
+| Active Full 32 | 0xA6 | ❌ | 🧪 Experimental |
+| Active 20 | 0xA7 | ✅ | ✅ Testado |
+| Active 8W | 0xA8 | ✅ | 🧪 Experimental |
+| M-300+ | 0x4B | ❌ | ✅ Testado |
+| M-300 Flex | 0x5D | ❌ | 🧪 Experimental |
 
-**Configuração:**
-- **Porta:** 9999 (padrão)
-- **Host:** 0.0.0.0 (todas as interfaces)
-- **Keep Alive:** Habilitado (30s)
+## 📦 Instalação
 
-### 2. Interface Web HTML
-
-**Características:**
-- Design moderno com CSS Grid e Flexbox
-- Teclado virtual para entrada de códigos
-- Status visual em tempo real
-- Alertas com categorização por cores
-- Responsivo para mobile e desktop
-
-### 3. Dashboard React
-
-**Funcionalidades Avançadas:**
-- Estado em tempo real do sistema
-- Painel de controle interativo
-- Histórico de alertas
-- Informações detalhadas do sistema
-- Botões de emergência
-- Indicadores visuais de status
-
-## Instalação
-
-### Pré-requisitos
+### Instalação Automática (Recomendada)
 
 ```bash
-# Node.js (versão 14+)
-# Node-RED instalado
-# Central JFL compatível (Active series, M-300)
+# Download do instalador
+curl -O https://raw.githubusercontent.com/usuario/node-red-contrib-alarme-jfl/main/install.sh
+chmod +x install.sh
+
+# Executar instalação
+./install.sh
 ```
 
-### 1. Instalar o Nó Customizado
+### Instalação Manual
+
+#### 1. Pré-requisitos
 
 ```bash
-# Navegar para o diretório do Node-RED
+# Node.js 14+ e NPM
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# Node-RED
+sudo npm install -g --unsafe-perm node-red
+
+# MQTT (opcional)
+sudo apt-get install mosquitto mosquitto-clients
+```
+
+#### 2. Instalar Nó Customizado
+
+```bash
+# Criar diretório
+mkdir -p ~/.node-red/nodes/alarme-jfl
+
+# Copiar arquivos (baixar do repositório)
+cp alarme-jfl.js ~/.node-red/nodes/alarme-jfl/
+cp alarme-jfl.html ~/.node-red/nodes/alarme-jfl/
+cp package.json ~/.node-red/nodes/alarme-jfl/
+
+# Instalar dependências do Node-RED
 cd ~/.node-red
-
-# Criar diretório para nós customizados
-mkdir -p nodes/alarme-jfl
-
-# Copiar arquivos
-cp alarme-jfl.js nodes/alarme-jfl/
-cp alarme-jfl.html nodes/alarme-jfl/
-cp package.json nodes/alarme-jfl/
-
-# Reiniciar Node-RED
-sudo systemctl restart nodered
+npm install node-red-dashboard node-red-contrib-telegrambot node-red-node-email
 ```
 
-### 2. Importar Fluxo
+#### 3. Configurar e Iniciar
 
-1. Abrir Node-RED (http://localhost:1880)
-2. Menu → Import → Clipboard
-3. Colar o JSON do fluxo completo
-4. Deploy
-
-### 3. Configurar Dependências
-
-**MQTT Broker (opcional):**
 ```bash
-# Mosquitto
-sudo apt install mosquitto mosquitto-clients
-sudo systemctl enable mosquitto
-sudo systemctl start mosquitto
+# Iniciar Node-RED
+node-red
+
+# Acessar interface: http://localhost:1880
+# Importar fluxo JFL completo
+# Configurar central JFL para conectar na porta 9999
 ```
 
-**Email (opcional):**
-- Configurar nó de email com credenciais SMTP
-- Gmail: usar senha de app específica
+## 🔧 Configuração
 
-### 4. Configurar Central JFL
+### Central JFL
 
-**Configurações de Rede na Central:**
-- IP do servidor Node-RED
-- Porta: 9999
-- Protocolo: TCP
-- Envio periódico: Habilitado
+Configure sua central JFL com as seguintes opções de rede:
 
-**Modelos Testados:**
-- Active-32 Duo (0xA0)
-- Active 20 Ultra/GPRS (0xA1)
-- Active 8 Ultra (0xA2)
-- Active 20 Ethernet (0xA3)
-- M-300+ (0x4B)
+```
+IP Servidor: [IP_DO_SERVIDOR_NODE_RED]
+Porta: 9999
+Protocolo: TCP
+Envio Periódico: Habilitado
+Intervalo: 30 segundos
+```
 
-## Uso
+### Códigos de Usuário
+
+⚠️ **IMPORTANTE**: Altere os códigos padrão antes do uso em produção!
+
+Edite no arquivo `alarme-jfl.js`:
+
+```javascript
+function validateUserCode(code) {
+    const validCodes = ['1234', '0000', '9999']; // ALTERAR ESTES CÓDIGOS!
+    return validCodes.includes(code);
+}
+```
+
+### Notificações
+
+#### Email (Gmail)
+
+```javascript
+// No nó de email, configurar:
+{
+    "server": "smtp.gmail.com",
+    "port": 465,
+    "secure": true,
+    "user": "seu-email@gmail.com",
+    "pass": "sua-senha-de-app-específica"
+}
+```
+
+#### Telegram
+
+1. Criar bot: conversar com @BotFather
+2. Obter token do bot
+3. Obter ID do chat/grupo
+4. Configurar no nó Telegram
+
+## 🎮 Uso
 
 ### APIs Disponíveis
 
-#### 1. Controle via HTTP
+#### 1. HTTP REST API
 
 ```bash
-# Armar Total
+# Status do sistema
+curl http://localhost:1880/jfl/status
+
+# Armar total
 curl -X POST http://localhost:1880/jfl/control \
   -H "Content-Type: application/json" \
   -d '{"command": "ARM_AWAY"}'
 
-# Armar Parcial
+# Armar parcial
 curl -X POST http://localhost:1880/jfl/control \
   -H "Content-Type: application/json" \
   -d '{"command": "ARM_STAY"}'
 
-# Desarmar (requer código)
+# Desarmar (com código)
 curl -X POST http://localhost:1880/jfl/control \
   -H "Content-Type: application/json" \
   -d '{"command": "DISARM", "code": "1234"}'
-
-# Obter Status
-curl http://localhost:1880/jfl/status
 ```
 
 #### 2. WebSocket
@@ -144,13 +172,13 @@ const ws = new WebSocket('ws://localhost:1880/ws/jfl');
 
 // Enviar comando
 ws.send(JSON.stringify({
-  command: 'ARM_AWAY'
+    command: 'ARM_AWAY'
 }));
 
 // Receber eventos
 ws.onmessage = (event) => {
-  const data = JSON.parse(event.data);
-  console.log('Evento JFL:', data);
+    const data = JSON.parse(event.data);
+    console.log('Evento JFL:', data);
 };
 ```
 
@@ -161,149 +189,140 @@ ws.onmessage = (event) => {
 mosquitto_pub -h localhost -t "jfl/commands/input" \
   -m '{"command": "ARM_AWAY"}'
 
-# Assinar eventos
+# Escutar eventos
 mosquitto_sub -h localhost -t "jfl/events"
 mosquitto_sub -h localhost -t "jfl/status"
-mosquitto_sub -h localhost -t "jfl/commands"
 ```
+
+### Comandos Suportados
+
+| Comando | Descrição | Código Necessário |
+|---------|-----------|-------------------|
+| `ARM_AWAY` | Armamento total | ❌ |
+| `ARM_STAY` | Armamento parcial | ❌ |
+| `DISARM` | Desarmamento | ✅ |
+| `GET_STATE` | Status atual | ❌ |
+| `CLEAR_ALERTS` | Limpar alertas | ❌ |
 
 ### Códigos de Eventos
 
-| Código | Descrição | Tipo |
-|--------|-----------|------|
-| 3441 | Armado Parcial | Status |
-| 3401-3409 | Armado Total | Status |
-| 1401-1409 | Desarmado | Status |
-| 1100-1109 | Alarme Zona | Alarme |
-| 1130, 1134, 1137 | Alarme Incêndio | Crítico |
-| 3130, 3134, 3137 | Incêndio Restaurado | Status |
-| 1384 | Bateria Baixa | Manutenção |
-| 1602 | Teste Periódico | Info |
+| Código | Descrição | Prioridade |
+|--------|-----------|------------|
+| `3441` | Sistema armado parcialmente | Alta |
+| `3401-3409` | Sistema armado totalmente | Alta |
+| `1401-1409` | Sistema desarmado | Alta |
+| `1100-1109` | Alarme de zona | **Crítica** |
+| `1130, 1134, 1137` | Alarme de incêndio | **Crítica** |
+| `3130, 3134, 3137` | Incêndio restaurado | Normal |
+| `1384` | Bateria baixa | Normal |
+| `1602` | Teste periódico | Normal |
 
-### Estados do Sistema
+## 🖥️ Interfaces Web
 
-- **DISARMED:** Sistema desarmado
-- **ARMED_HOME:** Armado parcial (proteção perimetral)
-- **ARMED_AWAY:** Armado total (proteção completa)
-- **ALARM_SOUNDING:** Alarme ativado
-- **FIRE_ALARM:** Alarme de incêndio
+### Interface HTML Básica
 
-## Personalização
+- Teclado virtual para códigos
+- Status visual em tempo real
+- Histórico de alertas
+- Design responsivo
 
-### Códigos de Usuário
+### Dashboard React Avançado
 
-Editar função `validateUserCode()`:
+- Painel de controle completo
+- Monitoramento de saúde do sistema
+- Informações detalhadas da central
+- Alertas categorizados
+- Botões de emergência
 
-```javascript
-function validateUserCode(code) {
-    const validCodes = ['1234', '0000', '9999', 'seu_codigo'];
-    return validCodes.includes(code);
-}
-```
-
-### Adicionar Modelos JFL
-
-Editar função `identifyModel()`:
-
-```javascript
-case 'XX': // Novo código hex
-    modelo = 'Novo Modelo JFL';
-    temEletrificador = true; // ou false
-    break;
-```
-
-### Notificações Customizadas
-
-Adicionar novos canais no fluxo:
-- SMS via API
-- Push notifications
-- Telegram bot
-- Webhook personalizado
-
-## Monitoramento
+## 📊 Monitoramento
 
 ### Logs
 
 ```bash
 # Logs do Node-RED
-journalctl -u nodered -f
+tail -f ~/.node-red/node-red.log
 
-# Arquivo de eventos (se configurado)
-tail -f /data/jfl_events.log
+# Eventos JFL (se configurado)
+tail -f ~/.node-red/data/jfl/jfl_events_$(date +%Y-%m-%d).log
+
+# Status do sistema
+./status-jfl-system.sh
 ```
 
-### Debug
+### Métricas Armazenadas
 
-1. Habilitar debug no nó "Debug JFL"
-2. Monitorar aba Debug no Node-RED
-3. Verificar status dos nós no fluxo
+- ✅ Histórico de eventos (últimos 1000)
+- ✅ Histórico de comandos (últimos 100)
+- ✅ Informações de clientes conectados
+- ✅ Estatísticas do sistema
+- ✅ Status de saúde em tempo real
 
-### Métricas
-
-O sistema armazena automaticamente:
-- Histórico de eventos (últimos 1000)
-- Histórico de comandos (últimos 100)
-- Informações de clientes conectados
-- Status atual do sistema
-
-## Solução de Problemas
-
-### Central não Conecta
-
-1. Verificar IP e porta na central
-2. Verificar firewall
-3. Testar conexão: `telnet IP_NODERED 9999`
-4. Verificar logs do Node-RED
-
-### Comandos não Funcionam
-
-1. Verificar se central está conectada
-2. Validar códigos de usuário
-3. Verificar modelo da central suportado
-4. Revisar logs de debug
-
-### Interface não Atualiza
-
-1. Verificar conexão WebSocket
-2. Limpar cache do navegador
-3. Verificar JavaScript console
-4. Validar configuração do WebSocket
-
-## Segurança
+## 🔒 Segurança
 
 ### Recomendações
 
-1. **Códigos fortes:** Use códigos de 6+ dígitos
-2. **HTTPS:** Configure certificado SSL
-3. **Firewall:** Limite acesso às portas
-4. **VPN:** Use VPN para acesso remoto
-5. **Logs:** Monitore acessos não autorizados
+1. **Códigos Fortes**: Use códigos de 6+ dígitos únicos
+2. **HTTPS**: Configure certificado SSL em produção
+3. **Firewall**: Limite acesso às portas (1880, 9999)
+4. **VPN**: Use VPN para acesso remoto
+5. **Monitoramento**: Monitore logs de acesso
+6. **Backup**: Faça backup regular das configurações
 
-### Autenticação
+### Implementações de Segurança
 
-Para produção, implemente:
-- Autenticação JWT
-- Rate limiting
-- Controle de acesso baseado em funções
-- Criptografia de códigos
+- ✅ Validação de códigos de usuário
+- ✅ Log de auditoria completo
+- ✅ Timeout de sessão
+- ✅ Validação de entrada
+- ✅ Mascaramento de códigos nos logs
 
-## Contribuição
+## 🛠️ Desenvolvimento
 
-Para contribuir com melhorias:
+### Estrutura do Projeto
+
+```
+~/.node-red/
+├── nodes/alarme-jfl/
+│   ├── alarme-jfl.js          # Lógica principal do nó
+│   ├── alarme-jfl.html        # Interface do nó
+│   └── package.json           # Configurações do nó
+├── data/jfl/                  # Dados e logs
+├── projects/jfl-system/       # Exemplos e utilitários
+└── flows.json                 # Fluxos Node-RED
+```
+
+### Contribuindo
 
 1. Fork do repositório
-2. Criar branch para feature
-3. Implementar melhorias
-4. Testes em diferentes modelos JFL
-5. Pull request com documentação
+2. Criar branch: `git checkout -b feature/nova-funcionalidade`
+3. Commit: `git commit -am 'Adicionar nova funcionalidade'`
+4. Push: `git push origin feature/nova-funcionalidade`
+5. Pull Request
 
-## Suporte
+### Testes
 
-Para dúvidas e suporte:
-- Documentação Node-RED: https://nodered.org/docs/
-- Manual central JFL
-- Fórum Node-RED: https://discourse.nodered.org/
+```bash
+# Testar API
+~/.node-red/projects/jfl-system/test-api.sh
 
-## Licença
+# Testar WebSocket
+node test-websocket.js
 
-MIT License - Livre para uso pessoal e comercial.
+# Testar MQTT
+mosquitto_pub -h localhost -t "jfl/commands/input" -m '{"command":"GET_STATE"}'
+```
+
+## 🐛 Solução de Problemas
+
+### Central não Conecta
+
+1. ✅ Verificar IP e porta na central JFL
+2. ✅ Verificar firewall (porta 9999)
+3. ✅ Testar conectividade: `telnet IP_SERVER 9999`
+4. ✅ Verificar logs: `tail -f ~/.node-red/node-red.log`
+
+### Comandos não Funcionam
+
+1. ✅ Verificar se central está conectada
+2. ✅ Validar códigos de usuário
+3. ✅ Verificar modelo suport
