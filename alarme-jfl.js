@@ -32,10 +32,60 @@ module.exports = function(RED) {
         const alarmCommands = {
             armAway: [0x06, 0x01, 0x4E, 0x01],      // Armar Away
             armStay: [0x06, 0x01, 0x4F, 0x01],      // Armar Stay
-            // arm: [0x06, 0x01, 0x??, 0x01],        // Armar (código necessário)
-            // disarm: [0x06, 0x01, 0x??, 0x01],     // Desarmar (código necessário)
+            disarm: [0x06, 0x01, 0x4D, 0x01],       // Desarmar (código genérico)
+			disarmWithCode: (code) => {
+             // Converter código para bytes
+              const codeBytes = code.split('').map(c => parseInt(c) + 0x30);
+              return [0x06, 0x01, 0x4D, 0x01, ...codeBytes];
+            }
         };
+        function disarm(code = null) {
+    let command;
+    let commandName = 'DISARM';
+    
+    if (code) {
+        // Validar código antes de enviar
+        if (!validateUserCode(code)) {
+            const errorMsg = {
+                payload: {
+                    type: 'error',
+                    message: 'Código de usuário inválido',
+                    timestamp: new Date().toISOString()
+                }
+            };
+            node.send(errorMsg);
+            return false;
+        }
         
+        command = alarmCommands.disarmWithCode(code);
+        commandName = `DISARM_CODE`;
+    } else {
+        command = alarmCommands.disarm;
+    }
+    
+    return sendAlarmCommand(command, commandName, code);
+}
+/ 10. Adicionar função para status detalhado do sistema
+function getDetailedStatus() {
+    const connectedClients = Array.from(connectedSockets).map(socket => ({
+        address: socket.remoteAddress,
+        port: socket.remotePort,
+        connected: !socket.destroyed,
+        startByte: clientStartBytes.get(socket)?.toString(16) || 'N/A'
+    }));
+    
+    return {
+        type: 'detailed_status',
+        currentState: currentAlarmState,
+        clients: connectedClients,
+        serverInfo: {
+            host: host,
+            port: port,
+            keepAliveEnabled: config.enableKeepAlive !== false,
+            keepAliveInterval: keepAliveInterval
+        },
+        timestamp: new Date().toISOString()
+    };
         // Função para calcular checksum XOR
         function calculateChecksum(buffer) {
             let checksum = 0;
@@ -116,49 +166,108 @@ module.exports = function(RED) {
             
             return { modelo, temEletrificador };
         }
-        
+        function sendWebSocketUpdate(data) {
+    // Implementar WebSocket se necessário
+    // const ws = require('ws');
+    // if (wsServer) {
+    //     wsServer.clients.forEach(client => {
+    //         if (client.readyState === ws.OPEN) {
+    //             client.send(JSON.stringify(data));
+    //         }
+    //     });
+    // }
+}
+// 7. Adicionar log de eventos para auditoria
+function logEvent(eventType, details) {
+    const logEntry = {
+        timestamp: new Date().toISOString(),
+        type: eventType,
+        details: details,
+        clientCount: connectedSockets.size
+    };
+    
+    // Enviar log para saída do nó
+    const logMsg = {
+        payload: {
+            type: 'event_log',
+            ...logEntry
+        }
+    };
+    node.send(logMsg);
+    
+    node.log(`[LOG] ${eventType}: ${JSON.stringify(details)}`);
+}
+// validação de código de usuário
+function validateUserCode(code) {
+    // Lista de códigos válidos (em produção, isso deveria vir de uma configuração segura)
+    const validCodes = ['1234', '0000', '9999']; // Exemplo
+    return validCodes.includes(code);
+}
         // Função para enviar comando para todos os clientes conectados
-        function sendAlarmCommand(command, commandName) {
-            if (connectedSockets.size === 0) {
-                node.warn(`Nenhum cliente conectado para enviar comando ${commandName}`);
-                return false;
-            }
+        function sendAlarmCommand(command, commandName, userCode = null) {
+    // Validar código de usuário se fornecido
+    if (userCode && !validateUserCode(userCode)) {
+        node.warn(`Código de usuário inválido para comando ${commandName}`);
+        logEvent('INVALID_CODE', { command: commandName, code: '***' });
+        return false;
+    }
+    
+    if (connectedSockets.size === 0) {
+        node.warn(`Nenhum cliente conectado para enviar comando ${commandName}`);
+        logEvent('NO_CLIENT', { command: commandName });
+        return false;
+    }
+    
+    let successCount = 0;
+    connectedSockets.forEach(socket => {
+        if (!socket.destroyed) {
+            const clientStartByte = clientStartBytes.get(socket) || 0x7B;
+            const commandMessage = createResponseMessage([clientStartByte, ...command]);
             
-            let successCount = 0;
-            connectedSockets.forEach(socket => {
-                if (!socket.destroyed) {
-                    // Usar o byte inicial específico do cliente
-                    const clientStartByte = clientStartBytes.get(socket) || 0x7B;
-                    const commandMessage = createResponseMessage([clientStartByte, ...command]);
-                    
-                    socket.write(commandMessage, (err) => {
-                        if (err) {
-                            node.error(`Erro ao enviar ${commandName} para ${socket.remoteAddress}: ${err.message}`);
-                        } else {
-                            node.log(`${commandName} enviado para ${socket.remoteAddress}: ${commandMessage.toString('hex')}`);
-                            successCount++;
-                        }
+            socket.write(commandMessage, (err) => {
+                if (err) {
+                    node.error(`Erro ao enviar ${commandName} para ${socket.remoteAddress}: ${err.message}`);
+                    logEvent('COMMAND_ERROR', { 
+                        command: commandName, 
+                        client: socket.remoteAddress, 
+                        error: err.message 
+                    });
+                } else {
+                    node.log(`${commandName} enviado para ${socket.remoteAddress}: ${commandMessage.toString('hex')}`);
+                    successCount++;
+                    logEvent('COMMAND_SENT', { 
+                        command: commandName, 
+                        client: socket.remoteAddress,
+                        success: true
                     });
                 }
             });
-            
-            // Enviar dados para saída do nó
-            const msg = {
-                payload: {
-                    type: 'command',
-                    command: commandName,
-                    sent: 'varia por cliente',
-                    sentBytes: command.length + 2, // comando + startByte + checksum
-                    timestamp: new Date().toISOString(),
-                    clientCount: connectedSockets.size,
-                    successCount: successCount
-                }
-            };
-            node.send(msg);
-            
-            node.status({fill:"blue", shape:"dot", text:`${commandName} enviado (${successCount}/${connectedSockets.size} clientes)`});
-            return true;
         }
+    });
+    
+    // Enviar dados para saída do nó
+    const msg = {
+        payload: {
+            type: 'command',
+            command: commandName,
+            sent: 'varia por cliente',
+            sentBytes: command.length + 2,
+            timestamp: new Date().toISOString(),
+            clientCount: connectedSockets.size,
+            successCount: successCount,
+            userCode: userCode ? '***' : null // Mascarar código no log
+        }
+    };
+    node.send(msg);
+    
+    node.status({
+        fill: successCount > 0 ? "blue" : "red", 
+        shape: "dot", 
+        text: `${commandName} ${successCount}/${connectedSockets.size}`
+    });
+    
+    return successCount > 0;
+}
         
         // Funções específicas para cada comando
         function armAway() {
@@ -171,183 +280,267 @@ module.exports = function(RED) {
         
         // Função para processar eventos de pacotes de 24 bytes
         function processEvent24(data) {
-            let eventInfo = {
-                evento: '',
-                previousState: JSON.parse(JSON.stringify(currentAlarmState)), // Cópia do estado anterior
-                armed_away: currentAlarmState.armed_away,
-                armed_night: currentAlarmState.armed_night,
-                armed_home: currentAlarmState.armed_home,
-                alarm_sounding: currentAlarmState.alarm_sounding,
-                fire_alarm: currentAlarmState.fire_alarm,
-                eletrificador: currentAlarmState.eletrificador,
-                state: currentAlarmState.state
-            };
-            
-            // Extrair evento dos bytes 8-11 (4 bytes ASCII)
-            if (data.length >= 12) {
-                eventInfo.evento = data.slice(8, 12).toString('ascii');
-                
-                // Processar eventos conforme a lógica Python
-                switch (eventInfo.evento) {
-                    case '3441':
-                        eventInfo.armed_away = false;
-                        eventInfo.armed_night = false;
-                        eventInfo.armed_home = true;
-                        eventInfo.state = 'ARMED_HOME';
-                        break;
-                        
-                    case '3401':
-                    case '3407':
-                    case '3403':
-                    case '3404':
-                    case '3408':
-                    case '3409':
-                        eventInfo.armed_away = true;
-                        eventInfo.armed_night = false;
-                        eventInfo.armed_home = false;
-                        eventInfo.state = 'ARMED_AWAY';
-                        if (eventInfo.evento === '3407') {
-                            eventInfo.eletrificador = true;
-                        }
-                        break;
-                    case '1306':   
-                        eventInfo.state = 'Mudança na programação';
-                        break;
-                    case '1401':
-                    case '1407':
-                    case '1403':
-                    case '1409':
-                        eventInfo.armed_home = false;
-                        eventInfo.armed_away = false;
-                        eventInfo.armed_night = false;
-                        eventInfo.alarm_sounding = false;
-                        eventInfo.fire_alarm = false;
-                        eventInfo.eletrificador = false;
-                        eventInfo.state = 'DISARMED';
-                        break;
-                    case '1422':
-                        eventInfo.state = 'PGM acionada pelo usuário';
-                        break;
-                    case '1602':
-                        eventInfo.state = 'Teste Periodico';
-                        break;
-                    case '1130':
-                        // Fire alarm - somente se armado (home ou away)
-                        if (eventInfo.armed_home || eventInfo.armed_away) {
-                            eventInfo.fire_alarm = true;
-                        }
-                        break;
-                        
-                    case '3130':
-                        eventInfo.fire_alarm = false;
-                        break;
-                        
-                    case '1134':
-                        // Fire alarm - somente se armado (home ou away)
-                        if (eventInfo.armed_home || eventInfo.armed_away) {
-                            eventInfo.fire_alarm = true;
-                        }
-                        break;
-                        
-                    case '3134':
-                        eventInfo.fire_alarm = false;
-                        break;
-                        
-                    case '1137':
-                        // Fire alarm - somente se armado (home ou away)
-                        if (eventInfo.armed_home || eventInfo.armed_away) {
-                            eventInfo.fire_alarm = true;
-                        }
-                        break;
-                        
-                    case '3137':
-                        eventInfo.fire_alarm = false;
-                        break;
-                    case '3422':
-                        eventInfo.state = 'PGM desacionada pelo usuário';
-                        break;
-                    default:
-                        eventInfo.state = 'UNKNOWN_EVENT';
-                }
-                
-                // Atualizar estado atual
-                currentAlarmState = {
-                    armed_away: eventInfo.armed_away,
-                    armed_night: eventInfo.armed_night,
-                    armed_home: eventInfo.armed_home,
-                    alarm_sounding: eventInfo.alarm_sounding,
-                    fire_alarm: eventInfo.fire_alarm,
-                    eletrificador: eventInfo.eletrificador,
-                    state: eventInfo.state
-                };
-                
-                node.log(`Evento processado: ${eventInfo.evento} - Estado: ${eventInfo.state}`);
-            }
-            
-            return eventInfo;
+    let eventInfo = {
+        evento: '',
+        previousState: JSON.parse(JSON.stringify(currentAlarmState)),
+        armed_away: currentAlarmState.armed_away,
+        armed_night: currentAlarmState.armed_night,
+        armed_home: currentAlarmState.armed_home,
+        alarm_sounding: currentAlarmState.alarm_sounding,
+        fire_alarm: currentAlarmState.fire_alarm,
+        eletrificador: currentAlarmState.eletrificador,
+        state: currentAlarmState.state,
+        zone: null,
+        user: null,
+        description: ''
+    };
+    
+    // Extrair evento dos bytes 8-11 (4 bytes ASCII)
+    if (data.length >= 12) {
+        eventInfo.evento = data.slice(8, 12).toString('ascii');
+        
+        // Extrair zona (se aplicável)
+        if (data.length >= 16) {
+            eventInfo.zone = data.slice(12, 16).toString('ascii');
         }
+        
+        // Processar eventos conforme a lógica expandida
+        switch (eventInfo.evento) {
+            // Eventos de armamento
+            case '3441':
+                eventInfo.armed_away = false;
+                eventInfo.armed_night = false;
+                eventInfo.armed_home = true;
+                eventInfo.state = 'ARMED_HOME';
+                eventInfo.description = 'Sistema armado parcialmente';
+                break;
+                
+            case '3401':
+            case '3407':
+            case '3403':
+            case '3404':
+            case '3408':
+            case '3409':
+                eventInfo.armed_away = true;
+                eventInfo.armed_night = false;
+                eventInfo.armed_home = false;
+                eventInfo.state = 'ARMED_AWAY';
+                eventInfo.description = 'Sistema armado totalmente';
+                if (eventInfo.evento === '3407') {
+                    eventInfo.eletrificador = true;
+                    eventInfo.description += ' com eletrificador';
+                }
+                break;
+                
+            // Eventos de desarmamento
+            case '1401':
+            case '1407':
+            case '1403':
+            case '1409':
+                eventInfo.armed_home = false;
+                eventInfo.armed_away = false;
+                eventInfo.armed_night = false;
+                eventInfo.alarm_sounding = false;
+                eventInfo.fire_alarm = false;
+                eventInfo.eletrificador = false;
+                eventInfo.state = 'DISARMED';
+                eventInfo.description = 'Sistema desarmado';
+                break;
+                
+            // Eventos de alarme
+            case '1100':
+            case '1101':
+            case '1102':
+            case '1103':
+            case '1104':
+            case '1105':
+            case '1106':
+            case '1107':
+            case '1108':
+            case '1109':
+                if (eventInfo.armed_home || eventInfo.armed_away) {
+                    eventInfo.alarm_sounding = true;
+                    eventInfo.state = 'ALARM_SOUNDING';
+                    eventInfo.description = `Alarme zona ${eventInfo.zone}`;
+                }
+                break;
+                
+            // Eventos de incêndio
+            case '1130':
+            case '1134':
+            case '1137':
+                if (eventInfo.armed_home || eventInfo.armed_away) {
+                    eventInfo.fire_alarm = true;
+                    eventInfo.state = 'FIRE_ALARM';
+                    eventInfo.description = 'Alarme de incêndio';
+                }
+                break;
+                
+            // Restauração de incêndio
+            case '3130':
+            case '3134':
+            case '3137':
+                eventInfo.fire_alarm = false;
+                eventInfo.description = 'Alarme de incêndio restaurado';
+                break;
+                
+            // Eventos de zona
+            case '1300':
+            case '1301':
+            case '1302':
+            case '1303':
+            case '1304':
+            case '1305':
+            case '1306':
+            case '1307':
+            case '1308':
+            case '1309':
+                eventInfo.description = `Zona ${eventInfo.zone} violada`;
+                break;
+                
+            case '3300':
+            case '3301':
+            case '3302':
+            case '3303':
+            case '3304':
+            case '3305':
+            case '3306':
+            case '3307':
+            case '3308':
+            case '3309':
+                eventInfo.description = `Zona ${eventInfo.zone} restaurada`;
+                break;
+                
+            // Eventos de bateria
+            case '1384':
+                eventInfo.description = 'Bateria baixa';
+                break;
+                
+            case '3384':
+                eventInfo.description = 'Bateria restaurada';
+                break;
+                
+            // Eventos de falha AC
+            case '1301':
+                eventInfo.description = 'Falha de energia AC';
+                break;
+                
+            case '3301':
+                eventInfo.description = 'Energia AC restaurada';
+                break;
+                
+            // Eventos de usuário
+            case '1422':
+                eventInfo.state = 'PGM acionada pelo usuário';
+                eventInfo.description = 'PGM acionada manualmente';
+                break;
+                
+            case '3422':
+                eventInfo.state = 'PGM desacionada pelo usuário';
+                eventInfo.description = 'PGM desacionada manualmente';
+                break;
+                
+            // Teste periódico
+            case '1602':
+                eventInfo.state = 'Teste Periodico';
+                eventInfo.description = 'Teste periódico realizado';
+                break;
+                
+            default:
+                eventInfo.state = 'UNKNOWN_EVENT';
+                eventInfo.description = `Evento desconhecido: ${eventInfo.evento}`;
+        }
+        
+        // Atualizar estado atual
+        currentAlarmState = {
+            armed_away: eventInfo.armed_away,
+            armed_night: eventInfo.armed_night,
+            armed_home: eventInfo.armed_home,
+            alarm_sounding: eventInfo.alarm_sounding,
+            fire_alarm: eventInfo.fire_alarm,
+            eletrificador: eventInfo.eletrificador,
+            state: eventInfo.state
+        };
+        
+        node.log(`Evento processado: ${eventInfo.evento} - ${eventInfo.description}`);
+    }
+    
+    return eventInfo;
+}
+
         
         // Função para processar mensagens de entrada (comandos)
         node.on('input', function(msg) {
-            if (msg.payload && typeof msg.payload === 'object' && msg.payload.command) {
-                const command = msg.payload.command.toUpperCase();
-                
-                switch(command) {
-                    case 'ARM_AWAY':
-                        armAway();
-                        break;
-                    case 'ARM_STAY':
-                        armStay();
-                        break;
-                    case 'GET_STATE':
-                        // Retornar estado atual
-                        const stateMsg = {
-                            payload: {
-                                type: 'current_state',
-                                ...currentAlarmState,
-                                timestamp: new Date().toISOString()
-                            }
-                        };
-                        node.send(stateMsg);
-                        break;
-                    // case 'ARM':
-                    //     arm();
-                    //     break;
-                    // case 'DISARM':
-                    //     disarm();
-                    //     break;
-                    default:
-                        node.warn(`Comando não reconhecido: ${command}`);
-                        node.warn(`Comandos disponíveis: ARM_AWAY, ARM_STAY, GET_STATE`);
-                }
-            } else if (msg.payload && typeof msg.payload === 'string') {
-                // Aceitar comando como string simples
-                const command = msg.payload.toUpperCase();
-                
-                switch(command) {
-                    case 'ARM_AWAY':
-                        armAway();
-                        break;
-                    case 'ARM_STAY':
-                        armStay();
-                        break;
-                    case 'GET_STATE':
-                        // Retornar estado atual
-                        const stateMsg = {
-                            payload: {
-                                type: 'current_state',
-                                ...currentAlarmState,
-                                timestamp: new Date().toISOString()
-                            }
-                        };
-                        node.send(stateMsg);
-                        break;
-                    default:
-                        node.warn(`Comando não reconhecido: ${command}`);
-                        node.warn(`Comandos disponíveis: ARM_AWAY, ARM_STAY, GET_STATE`);
-                }
-            }
-        });
+    if (msg.payload && typeof msg.payload === 'object' && msg.payload.command) {
+        const command = msg.payload.command.toUpperCase();
+        const code = msg.payload.code;
+        
+        switch(command) {
+            case 'ARM_AWAY':
+                armAway();
+                break;
+            case 'ARM_STAY':
+                armStay();
+                break;
+            case 'DISARM':
+                disarm(code);
+                break;
+            case 'GET_STATE':
+                // Retornar estado atual
+                const stateMsg = {
+                    payload: {
+                        type: 'current_state',
+                        ...currentAlarmState,
+                        timestamp: new Date().toISOString()
+                    }
+                };
+                node.send(stateMsg);
+                break;
+            case 'CLEAR_ALERTS':
+                // Limpar alertas
+                const clearMsg = {
+                    payload: {
+                        type: 'clear_alerts',
+                        timestamp: new Date().toISOString()
+                    }
+                };
+                node.send(clearMsg);
+                break;
+            default:
+                node.warn(`Comando não reconhecido: ${command}`);
+                node.warn(`Comandos disponíveis: ARM_AWAY, ARM_STAY, DISARM, GET_STATE, CLEAR_ALERTS`);
+        }
+    } else if (msg.payload && typeof msg.payload === 'string') {
+        // Aceitar comando como string simples
+        const command = msg.payload.toUpperCase();
+        
+        switch(command) {
+            case 'ARM_AWAY':
+                armAway();
+                break;
+            case 'ARM_STAY':
+                armStay();
+                break;
+            case 'DISARM':
+                disarm();
+                break;
+            case 'GET_STATE':
+                const stateMsg = {
+                    payload: {
+                        type: 'current_state',
+                        ...currentAlarmState,
+                        timestamp: new Date().toISOString()
+                    }
+                };
+                node.send(stateMsg);
+                break;
+            default:
+                node.warn(`Comando não reconhecido: ${command}`);
+                node.warn(`Comandos disponíveis: ARM_AWAY, ARM_STAY, DISARM, GET_STATE`);
+        }
+    }
+});
+
         
         // Função para enviar keep alive para todos os clientes conectados
         function sendKeepAlive() {
