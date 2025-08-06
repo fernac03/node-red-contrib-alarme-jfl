@@ -20,8 +20,8 @@
         "automacao"
     ],
     "author": {
-        "name": "Desenvolvedor JFL",
-        "email": "dev@exemplo.com"
+        "name": "Desenvolvedor Carlos Jose Fernandes",
+        "email": "fernac03@gmail.com"
     },
     "license": "MIT",
     "node-red": {
@@ -34,12 +34,12 @@
     "devDependencies": {},
     "repository": {
         "type": "git",
-        "url": "https://github.com/usuario/node-red-contrib-alarme-jfl.git"
+        "url": "https://github.com/fernac03/node-red-contrib-alarme-jfl.git"
     },
     "bugs": {
-        "url": "https://github.com/usuario/node-red-contrib-alarme-jfl/issues"
+        "url": "https://github.com/fernac03/node-red-contrib-alarme-jfl/issues"
     },
-    "homepage": "https://github.com/usuario/node-red-contrib-alarme-jfl#readme",
+    "homepage": "https://github.com/fernac03/node-red-contrib-alarme-jfl#readme",
     "engines": {
         "node": ">=14.0.0"
     },
