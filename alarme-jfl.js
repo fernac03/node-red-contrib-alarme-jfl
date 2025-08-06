@@ -30,13 +30,10 @@ module.exports = function(RED) {
         
         // Códigos de comando para o alarme
         const alarmCommands = {
-            armAway: [0x06, 0x01, 0x4E, 0x01],
+            armAway: [0x06, 0x01, 0x4D, 0x01],
             armStay: [0x06, 0x01, 0x4F, 0x01],
-            disarm: [0x06, 0x01, 0x4D, 0x01],
-            disarmWithCode: (code) => {
-                const codeBytes = code.split('').map(c => parseInt(c) + 0x30);
-                return [0x06, 0x01, 0x4D, 0x01, ...codeBytes];
-            }
+            disarm: [0x06, 0x01, 0x4F, 0x01],
+            
         };
         
         // Função para calcular checksum XOR
@@ -248,7 +245,7 @@ module.exports = function(RED) {
                     return false;
                 }
                 
-                command = alarmCommands.disarmWithCode(code);
+                command = alarmCommands.disarm;
                 commandName = `DISARM_CODE`;
             } else {
                 command = alarmCommands.disarm;
