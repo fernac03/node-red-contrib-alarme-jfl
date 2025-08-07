@@ -695,63 +695,62 @@ module.exports = function(RED) {
                     modelByte: data[41].toString(16).toUpperCase().padStart(2, '0')
                 };
                 particoes = ord(chr(data[51]));
-                eletrificador = false if '00' in f'{data[54]:0>2X}' else True;
+                //eletrificador = false if '00' in f'{data[54]:0>2X}' else True;
                 msg = [startByte, 0x07, 0x01, 0x21, 0x01, 0x01];
                 
                 node.log(`Modelo identificado: ${modelInfo.modelo} (0x${additionalData.modelByte}) - Eletrificador: ${modelInfo.temEletrificador}`);
-                msg = initializePgms();
-                node.log(msg);
-                msg = initializeZonas();
-                node.log(msg);
-                msg = initializeEletrificador();
-                node.log(msg);
-                msg = initializeSensors();
-                node.log(msg);
-                msg = initializeParticoes();
-                node.log(msg);
+                //msg = initializePgms();
+                //node.log(msg);
+                //msg = initializeZonas();
+                //node.log(msg);
+                //msg = initializeEletrificador();
+                //node.log(msg);
+                //msg = initializeSensors();
+                //node.log(msg);
+                //msg = initializeParticoes();
+                //node.log(msg);
             
             
 
             } else if (packetSize >= 118) {
                 shouldRespond = true;
-                packetType = 'extended_status';
-                const numZonas = global.get('num_zonas') || 100; // valor padrão
-                let processedZones = [];
-                let zona = 1;
-                packetType = "Processando pacote 118 bytes";
+                //const numZonas = global.get('num_zonas') || 100; // valor padrão
+                //let processedZones = [];
+                //let zona = 1;
+                //packetType = "Processando pacote 118 bytes";
                 // Processa 50 bytes a partir da posição 31
-                for (let i = 0; i < 50; i++) {
-                   if (zona > numZonas) break;
-                   const byteData = data[31 + i];
+                //for (let i = 0; i < 50; i++) {
+                //   if (zona > numZonas) break;
+                 //  const byteData = data[31 + i];
                    // Extrai nibbles (4 bits superiores e 4 bits inferiores)
-                   const high = (byteData >> 4) & 0x0F;  // 4 bits superiores
-                   const low = byteData & 0x0F;          // 4 bits inferiores
+                 //  const high = (byteData >> 4) & 0x0F;  // 4 bits superiores
+                 //  const low = byteData & 0x0F;          // 4 bits inferiores
                    // Processa o nibble superior (high)
-                   if (zona <= numZonas) {
-                      const result = setZoneStatus(zona, high);
-                      processedZones.push({
-                       zona: zona,
-                       nibble: 'high',
-                       byteIndex: 31 + i,
-                       rawValue: high,
-                       result: result
-                      });
-                      zona++;
-                   }
+                  // if (zona <= numZonas) {
+                  //    const result = setZoneStatus(zona, high);
+                  //    processedZones.push({
+                  //     zona: zona,
+                  //     nibble: 'high',
+                  //     byteIndex: 31 + i,
+                  //     rawValue: high,
+                  //     result: result
+                  //    });
+                   //   zona++;
+                  // }
                    // Processa o nibble inferior (low)  
-                   if (zona <= numZonas) {
-                      const result = setZoneStatus(zona, low);
-                      processedZones.push({
-                        zona: zona,
-                        nibble: 'low', 
-                        byteIndex: 31 + i,
-                        rawValue: low,
-                        result: result
-                      });
-                      zona++;
-                   }
-                   if (zona > numZonas) break;
-                } 
+                  // if (zona <= numZonas) {
+                  //    const result = setZoneStatus(zona, low);
+                   //   processedZones.push({
+                   //     zona: zona,
+                   //     nibble: 'low', 
+                   //     byteIndex: 31 + i,
+                    //    rawValue: low,
+                     //   result: result
+                    //  });
+                     // zona++;
+                  // }
+                   //if (zona > numZonas) break;
+                //} 
                 msg = [startByte, 0x06, 0x01, 0x40, 0x01];
                 
             } else {
