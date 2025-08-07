@@ -30,8 +30,8 @@ module.exports = function(RED) {
         
         // Códigos de comando para o alarme
         const alarmCommands = {
-            armAway: [0x06, 0x01, 0x4D, 0x01],
-            armStay: [0x06, 0x01, 0x4F, 0x01],
+            armAway: [0x06, 0x01, 0x4E, 0x01],
+            armStay: [0x06, 0x01, 0x53, 0x01],
             disarm: [0x06, 0x01, 0x4F, 0x01],
             
         };
