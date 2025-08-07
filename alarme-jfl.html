@@ -7,7 +7,9 @@
             port: { value: 9999, required: true, validate: RED.validators.number() },
             host: { value: "0.0.0.0", required: true },
             enableKeepAlive: { value: true },
-            keepAliveInterval: { value: 30000, required: true, validate: RED.validators.number() }
+            keepAliveInterval: { value: 30000, required: true, validate: RED.validators.number() },
+            enableGetState: { value: true },
+            getStateInterval: { value: 5, required: true, validate: RED.validators.number() }
         },
         inputs: 1,
         outputs: 1,
@@ -22,7 +24,7 @@
 <script type="text/html" data-template-name="alarme-jfl">
     <div class="form-row">
         <label for="node-input-name"><i class="icon-tag"></i> Nome</label>
-        <input type="text" id="node-input-name" placeholder="Nome do nó">
+        <input type="text" id="node-input-name" placeholder="Nome do nÃ³">
     </div>
     <div class="form-row">
         <label for="node-input-port"><i class="icon-bookmark"></i> Porta</label>
@@ -41,7 +43,16 @@
         <label for="node-input-keepAliveInterval"><i class="icon-clock-o"></i> Intervalo (ms)</label>
         <input type="text" id="node-input-keepAliveInterval" placeholder="30000">
     </div>
+   <div class="form-row">
+        <label for="node-input-enableGetState"><i class="icon-check"></i> Get State</label>
+        <input type="checkbox" id="node-input-enableGetState" style="display: inline-block; width: auto; vertical-align: top;">
+        <span style="margin-left: 10px;">Solicitar status da central automaticamente</span>
+    </div>
+    <div class="form-row">
+        <label for="node-input-getStateInterval"><i class="icon-clock-o"></i> Intervalo (ms)</label>
+        <input type="text" id="node-input-getStateInterval" placeholder="5">
+    </div>
 </script>
 
 <script type="text/html" data-help-name="alarme-jfl">
-    <p>Nó para comunicação com central de
+    <p>NÃ³ para comunicaÃ§Ã£o com central de
