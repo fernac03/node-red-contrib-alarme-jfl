@@ -1,4 +1,4 @@
-// alarme-jfl.js - Versão Final
+// alarme-jfl.js - VersÃ£o Final
 module.exports = function(RED) {
     "use strict";
     
@@ -9,14 +9,18 @@ module.exports = function(RED) {
         let server = null;
         let pgms = null;
         let particoes = null;
-        let zonas = null;
-        
-        // Configurações
+        let numZonas = null;
+        let sensors = {};
+        let zonas = {};
+        // ConfiguraÃ§Ãµes
         const port = parseInt(config.port) || 9999;
         const host = config.host || '0.0.0.0';
         const keepAliveInterval = parseInt(config.keepAliveInterval) || 30000;
+        const getStateInterval = parseInt(config.getStateInterval) || 5;
         
         let keepAliveTimer = null;
+
+        let getStateTimer = null;
         let connectedSockets = new Set();
         let clientStartBytes = new Map();
         
@@ -31,7 +35,7 @@ module.exports = function(RED) {
             state: 'DISARMED'
         };
         
-        // Códigos de comando para o alarme
+        // CÃ³digos de comando para o alarme
         const alarmCommands = {
             armAway: [0x06, 0x01, 0x4E, 0x01],
             armStay: [0x06, 0x01, 0x53, 0x01],
@@ -39,7 +43,7 @@ module.exports = function(RED) {
             
         };
         
-        // Função para calcular checksum XOR
+        // FunÃ§Ã£o para calcular checksum XOR
         function calculateChecksum(buffer) {
             let checksum = 0;
             for (let i = 0; i < buffer.length; i++) {
@@ -48,14 +52,14 @@ module.exports = function(RED) {
             return checksum;
         }
         
-        // Função para criar mensagem de resposta padrão
+        // FunÃ§Ã£o para criar mensagem de resposta padrÃ£o
         function createResponseMessage(msg) {
             const baseMessage = Buffer.from(msg);
             const checksum = calculateChecksum(baseMessage);
             return Buffer.concat([baseMessage, Buffer.from([checksum])]);
         }
         
-        // Função para identificar modelo da central baseado no byte 41
+        // FunÃ§Ã£o para identificar modelo da central baseado no byte 41
         function identifyModel(data) {
             if (data.length < 42) {
                 return { modelo: 'Desconhecido', temEletrificador: false };
@@ -73,89 +77,121 @@ module.exports = function(RED) {
                     temEletrificador = true;
                     pgms = 4;
                     particoes= 4;
-                    zonas = 32;
+                    numZonas = 32;
                     break;
                 case 'A1':
                     modelo = 'Active 20 Ultra/GPRS';
                     temEletrificador = true;
                     pgms = 4;
                     particoes= 2;
-                    zonas = 22;
+                    numZonas = 22;
                     break;
                 case 'A2':
                     modelo = 'Active 8 Ultra';
                     temEletrificador = false;
                     pgms = 0;
                     particoes= 2;
-                    zonas = 12;
+                    numZonas = 12;
                     break;
                 case 'A3':
                     modelo = 'Active 20 Ethernet';
                     temEletrificador = true;
                     pgms = 4;
                     particoes= 2;
-                    zonas = 22;
+                    numZonas = 22;
                     break;
                 case 'A4':
                     modelo = 'Active 100 Bus';
                     temEletrificador = true;
                     pgms = 16;
                     particoes= 16;
-                    zonas = 99;
+                    numZonas = 99;
                     break;
                 case 'A5':
                     modelo = 'Active 20 Bus';
                     temEletrificador = true;
                     pgms = 16;
                     particoes= 2;
-                    zonas = 32;
+                    numZonas = 32;
                     break;
                 case 'A6':
                     modelo = 'Active Full 32';
                     temEletrificador = false;
                     pgms = 16;
                     particoes= 4;
-                    zonas = 32;
+                    numZonas = 32;
                     break;
                 case 'A7':
                     modelo = 'Active 20';
                     temEletrificador = true;
                     pgms = 4;
                     particoes= 2;
-                    zonas = 32;
+                    numZonas = 32;
                     break;
                 case 'A8':
                     modelo = 'Active 8W';
                     temEletrificador = true;
                     pgms = 4;
                     particoes= 2;
-                    zonas = 32;
+                    numZonas = 32;
                     break;
                 case '4B':
                     modelo = 'M-300+';
                     temEletrificador = false;
                     pgms = 4;
                     particoes= 0;
-                    zonas = 0;
+                    numZonas = 0;
                     break;
                 case '5D':
                     modelo = 'M-300 Flex';
                     temEletrificador = false;
                     pgms = 2;
                     particoes= 0;
-                    zonas = 0;
+                    numZonas = 0;
                     break;
                 default:
-                    modelo = `Modelo não identificado (0x${modelHex})`;
+                    modelo = `Modelo nÃ£o identificado (0x${modelHex})`;
                     temEletrificador = false;
+                    numZonas = 0;
             }
             
-            return { modelo, temEletrificador };
+            return { modelo, temEletrificador,numZonas };
         }
-        //Função para inicialiar as zona;
+        //FunÃ§Ã£o para atualizar as zonas;
+        function setZoneStatus(zona, status) {
+           const statusMap = {
+              0: "disabled",
+              1: "inhibited", 
+              2: "triggered",
+              3: "no_communication",
+              4: "short_circuit",
+              5: "tamper_open",
+              6: "low_battery",
+              7: "open",
+              8: "closed"
+           };
+           const zonaId = `zona_${zona}`;
+           const mappedStatus = statusMap[status] || "STATE_UNKNOWN";
+           zonas[zonaId] = {
+             "state": mappedStatus,
+             "name": `Zona ${zona}`
+           };
+           if ([2, 4, 5, 7].includes(status)) {
+             zonas[zonaId] = {
+               "state": "ON",
+               "name": `Zona ${zona}`
+            };
+          } else {
+            zonas[zonaId] = {
+              "state": "OFF", 
+              "name": `Zona ${zona}`
+            };
+         }
+    
+       }
+ 
+        //FunÃ§Ã£o para inicialiar as zona;
         function initializeZonas() {
-            const numZonas = global.get('num_zonas') || 8; // valor padrão
-            let zonas = {};
             node.warn('inicializando as zonas da central#################################################################');
             for (let i = 0; i < numZonas; i++) {
                 const zonaId = `zona_${i + 1}`;
@@ -165,10 +201,10 @@ module.exports = function(RED) {
                };
           }
           // Salva as zonas no contexto global
-          global.set('zonas', zonas);
-          return { payload: zonas, topic: 'zonas_inicializadas' };
+          node.warn('zonas da central Inicializadas #################################################################');
+        
         }
-        // Função para inicializar o eletrificador
+        // FunÃ§Ã£o para inicializar o eletrificador
         function initializeEletrificador() {
            node.warn('inicializando eletrificador da central#################################################################');
            let pgms = global.get('pgms') || {};
@@ -183,10 +219,10 @@ module.exports = function(RED) {
            global.set('pgms', pgms);
            return { payload: pgms.eletrificador, topic: 'eletrificador_initialized' };
          }
-        // Função para Inicializar os  sensores
+        // FunÃ§Ã£o para Inicializar os  sensores
         function initializeSensors() {
            node.warn('inicializando os sensores da central#################################################################');
-           let sensors = global.get('sensors') || {};
+           
            sensors['bateria'] = {
               name: "Bateria",
               state: null,
@@ -196,10 +232,10 @@ module.exports = function(RED) {
             global.set('sensors', sensors);
             return { payload: sensors.bateria, topic: 'sensors_initialized' };
          }
-        // Função para inicializar as partições
+        // FunÃ§Ã£o para inicializar as partiÃ§Ãµes
         function initializeParticoes() {
-           const numParticoes = global.get('num_particoes') || 4; // valor padrão
-           node.warn('inicializando as partições da central#################################################################');
+           const numParticoes = global.get('num_particoes') || 4; // valor padrÃ£o
+           node.warn('inicializando as partiÃ§Ãµes da central#################################################################');
            let sensors = global.get('sensors') || {};  
            for (let i = 0; i < numParticoes; i++) {
               const particaoId = `particao_${i + 1}`;
@@ -213,9 +249,9 @@ module.exports = function(RED) {
            global.set('sensors', sensors);
            return { payload: sensors, topic: 'particoes_initialized' };
         } 
-        // função para inicializar as pgms
+        // funÃ§Ã£o para inicializar as pgms
         function initializePgms() {
-           const numPgms = global.get('num_pgms') || 8; // valor padrão
+           const numPgms = global.get('num_pgms') || 8; // valor padrÃ£o
            node.warn('inicializando as pgms da central#################################################################');
            let pgms = global.get('pgms') || {};
            for (let i = 0; i < numPgms; i++) {
@@ -232,13 +268,13 @@ module.exports = function(RED) {
           global.set('pgms', pgms);
           return { payload: pgms, topic: 'pgms_initialized' };
         }
-        // Função para validação de código de usuário
+        // FunÃ§Ã£o para validaÃ§Ã£o de cÃ³digo de usuÃ¡rio
         function validateUserCode(code) {
-            const validCodes = ['1234', '0000', '9999']; // Configurar códigos válidos
+            const validCodes = ['1234', '0000', '9999']; // Configurar cÃ³digos vÃ¡lidos
             return validCodes.includes(code);
         }
         
-        // Função para log de eventos para auditoria
+        // FunÃ§Ã£o para log de eventos para auditoria
         function logEvent(eventType, details) {
             const logEntry = {
                 timestamp: new Date().toISOString(),
@@ -258,17 +294,17 @@ module.exports = function(RED) {
             node.log(`[LOG] ${eventType}: ${JSON.stringify(details)}`);
         }
         
-        // Função para enviar comando para todos os clientes conectados
+        // FunÃ§Ã£o para enviar comando para todos os clientes conectados
         function sendAlarmCommand(command, commandName, userCode = null) {
-            // Validar código de usuário se fornecido
+            // Validar cÃ³digo de usuÃ¡rio se fornecido
             if (userCode && !validateUserCode(userCode)) {
-                node.warn(`Código de usuário inválido para comando ${commandName}`);
+                node.warn(`CÃ³digo de usuÃ¡rio invÃ¡lido para comando ${commandName}`);
                 logEvent('INVALID_CODE', { command: commandName, code: '***' });
                 
                 const errorMsg = {
                     payload: {
                         type: 'error',
-                        message: 'Código de usuário inválido',
+                        message: 'CÃ³digo de usuÃ¡rio invÃ¡lido',
                         command: commandName,
                         timestamp: new Date().toISOString()
                     }
@@ -310,7 +346,7 @@ module.exports = function(RED) {
                 }
             });
             
-            // Enviar dados para saída do nó
+            // Enviar dados para saÃ­da do nÃ³
             const msg = {
                 payload: {
                     type: 'command',
@@ -334,7 +370,7 @@ module.exports = function(RED) {
             return successCount > 0;
         }
         
-        // Funções específicas para cada comando
+        // FunÃ§Ãµes especÃ­ficas para cada comando
         function armAway() {
             return sendAlarmCommand(alarmCommands.armAway, 'ARM_AWAY');
         }
@@ -352,7 +388,7 @@ module.exports = function(RED) {
                     const errorMsg = {
                         payload: {
                             type: 'error',
-                            message: 'Código de usuário inválido',
+                            message: 'CÃ³digo de usuÃ¡rio invÃ¡lido',
                             timestamp: new Date().toISOString()
                         }
                     };
@@ -369,7 +405,7 @@ module.exports = function(RED) {
             return sendAlarmCommand(command, commandName, code);
         }
         
-        // Função para processar eventos de pacotes de 24 bytes
+        // FunÃ§Ã£o para processar eventos de pacotes de 24 bytes
         function processEvent24(data) {
             let eventInfo = {
                 evento: '',
@@ -390,12 +426,12 @@ module.exports = function(RED) {
             if (data.length >= 12) {
                 eventInfo.evento = data.slice(8, 12).toString('ascii');
                 
-                // Extrair zona (se aplicável)
+                // Extrair zona (se aplicÃ¡vel)
                 if (data.length >= 16) {
                     eventInfo.zone = data.slice(12, 16).toString('ascii');
                 }
                 
-                // Processar eventos conforme a lógica expandida
+                // Processar eventos conforme a lÃ³gica expandida
                 switch (eventInfo.evento) {
                     // Eventos de armamento
                     case '3441':
@@ -456,23 +492,23 @@ module.exports = function(RED) {
                         }
                         break;
                         
-                    // Eventos de incêndio
+                    // Eventos de incÃªndio
                     case '1130':
                     case '1134':
                     case '1137':
                         if (eventInfo.armed_home || eventInfo.armed_away) {
                             eventInfo.fire_alarm = true;
                             eventInfo.state = 'FIRE_ALARM';
-                            eventInfo.description = 'Alarme de incêndio';
+                            eventInfo.description = 'Alarme de incÃªndio';
                         }
                         break;
                         
-                    // Restauração de incêndio
+                    // RestauraÃ§Ã£o de incÃªndio
                     case '3130':
                     case '3134':
                     case '3137':
                         eventInfo.fire_alarm = false;
-                        eventInfo.description = 'Alarme de incêndio restaurado';
+                        eventInfo.description = 'Alarme de incÃªndio restaurado';
                         break;
                         
                     // Eventos de zona
@@ -520,21 +556,21 @@ module.exports = function(RED) {
                         eventInfo.description = 'Energia AC restaurada';
                         break;
                         
-                    // Eventos de usuário
+                    // Eventos de usuÃ¡rio
                     case '1422':
-                        eventInfo.state = 'PGM acionada pelo usuário';
+                        eventInfo.state = 'PGM acionada pelo usuÃ¡rio';
                         eventInfo.description = 'PGM acionada manualmente';
                         break;
                         
                     case '3422':
-                        eventInfo.state = 'PGM desacionada pelo usuário';
+                        eventInfo.state = 'PGM desacionada pelo usuÃ¡rio';
                         eventInfo.description = 'PGM desacionada manualmente';
                         break;
                         
-                    // Teste periódico
+                    // Teste periÃ³dico
                     case '1602':
                         eventInfo.state = 'Teste Periodico';
-                        eventInfo.description = 'Teste periódico realizado';
+                        eventInfo.description = 'Teste periÃ³dico realizado';
                         break;
                         
                     default:
@@ -559,7 +595,7 @@ module.exports = function(RED) {
             return eventInfo;
         }
         
-        // Função para processar mensagens de entrada (comandos)
+        // FunÃ§Ã£o para processar mensagens de entrada (comandos)
         node.on('input', function(msg) {
             if (msg.payload && typeof msg.payload === 'object' && msg.payload.command) {
                 const command = msg.payload.command.toUpperCase();
@@ -595,8 +631,8 @@ module.exports = function(RED) {
                         node.send(clearMsg);
                         break;
                     default:
-                        node.warn(`Comando não reconhecido: ${command}`);
-                        node.warn(`Comandos disponíveis: ARM_AWAY, ARM_STAY, DISARM, GET_STATE, CLEAR_ALERTS`);
+                        node.warn(`Comando nÃ£o reconhecido: ${command}`);
+                        node.warn(`Comandos disponÃ­veis: ARM_AWAY, ARM_STAY, DISARM, GET_STATE, CLEAR_ALERTS`);
                 }
             } else if (msg.payload && typeof msg.payload === 'string') {
                 const command = msg.payload.toUpperCase();
@@ -622,13 +658,13 @@ module.exports = function(RED) {
                         node.send(stateMsg);
                         break;
                     default:
-                        node.warn(`Comando não reconhecido: ${command}`);
-                        node.warn(`Comandos disponíveis: ARM_AWAY, ARM_STAY, DISARM, GET_STATE`);
+                        node.warn(`Comando nÃ£o reconhecido: ${command}`);
+                        node.warn(`Comandos disponÃ­veis: ARM_AWAY, ARM_STAY, DISARM, GET_STATE`);
                 }
             }
         });
         
-        // Função para enviar keep alive para todos os clientes conectados
+        // FunÃ§Ã£o para enviar keep alive para todos os clientes conectados
         function sendKeepAlive() {
             if (connectedSockets.size > 0) {
                 connectedSockets.forEach(socket => {
@@ -660,8 +696,39 @@ module.exports = function(RED) {
                 node.status({fill:"green", shape:"dot", text:`keep alive enviado (${connectedSockets.size} clientes)`});
             }
         }
-        
-        // Função para processar pacotes baseado no tamanho
+        // FunÃ§Ã£o para solicitar status da central
+        function sendGetState() {
+            if (connectedSockets.size > 0) {
+                connectedSockets.forEach(socket => {
+                    if (!socket.destroyed) {
+                        const clientStartByte = clientStartBytes.get(socket) || 0x7B;
+                        const getStateMessage = createResponseMessage([clientStartByte, 0x05, 0x01, 0x4d]);
+                        
+                        socket.write(getStateMessage, (err) => {
+                            if (err) {
+                                node.error(`Erro ao solicitar o status para ${socket.remoteAddress}: ${err.message}`);
+                            } else {
+                                node.log(`Solicitacao de status  enviado para ${socket.remoteAddress}: ${getStateMessage.toString('hex')}`);
+                            }
+                        });
+                    }
+                });
+                
+                const msg = {
+                    payload: {
+                        type: 'getState',
+                        sent: 'Varia por cliente',
+                        sentBytes: 5,
+                        timestamp: new Date().toISOString(),
+                        clientCount: connectedSockets.size
+                    }
+                };
+                node.send(msg);
+                
+                node.status({fill:"green", shape:"dot", text:`get State enviado (${connectedSockets.size} clientes)`});
+            }
+        }
+        // FunÃ§Ã£o para processar pacotes baseado no tamanho
         function processPacket(data, socket) {
             const packetSize = data.length;
             let shouldRespond = false;
@@ -691,16 +758,16 @@ module.exports = function(RED) {
                 additionalData = {
                     modelo: modelInfo.modelo,
                     temEletrificador: modelInfo.temEletrificador,
+                    Zonas: modelInfo.numZonas,
                     modelByte: data[41].toString(16).toUpperCase().padStart(2, '0')
                 };
                 //particoes = ord(chr(data[51]));
                 //eletrificador = false if '00' in f'{data[54]:0>2X}' else True;
                 msg = [startByte, 0x07, 0x01, 0x21, 0x01, 0x01];
-                node.log(`Modelo identificado: ${modelInfo.modelo} (0x${additionalData.modelByte}) - Eletrificador: ${modelInfo.temEletrificador}`);
+                node.log(`Modelo identificado: ${modelInfo.modelo} (0x${additionalData.modelByte}) - Eletrificador: ${modelInfo.temEletrificador} - Zonas: ${modelInfo.numZonas}`);
                 //msg = initializePgms();
                 //node.log(msg);
-                //msg = initializeZonas();
-                //node.log(msg);
+                initializeZonas();
                 //msg = initializeEletrificador();
                 //node.log(msg);
                 //msg = initializeSensors();
@@ -711,13 +778,50 @@ module.exports = function(RED) {
             
 
             } else if (packetSize >= 118) {
+                packetType = 'status_118';
+                let processedZones = [];
+                let zona = 1;
+                 
+                node.warn("Processando pacote 118 bytes");
+                // Processa 50 bytes a partir da posiÃ§Ã£o 31
+                for (let i = 0; i < 50; i++) {
+                   if (zona > numZonas) break;
+                      const byteData = data[31 + i];
+                      // Extrai nibbles (4 bits superiores e 4 bits inferiores)
+                      const high = (byteData >> 4) & 0x0F;  // 4 bits superiores
+                      const low = byteData & 0x0F;          // 4 bits inferiores
+                     // Processa o nibble superior (high)
+                     if (zona <= numZonas) {
+                         const result = setZoneStatus(zona, high);
+                         processedZones.push({
+                           zona: zona,
+                           nibble: 'high',
+                           byteIndex: 31 + i,
+                           rawValue: high,
+                           result: result
+                         });
+                         zona++;
+                     }
+                     // Processa o nibble inferior (low)  
+                     if (zona <= numZonas) {
+                       const result = setZoneStatus(zona, low);
+                       processedZones.push({
+                         zona: zona,
+                         nibble: 'low', 
+                         byteIndex: 31 + i,
+                         rawValue: low,
+                         result: result
+                      });
+                      zona++;
+                   }
+                  if (zona > numZonas) break;
+               }
                 shouldRespond = true;
                 msg = [startByte, 0x06, 0x01, 0x40, 0x01];
-                
             } else {
                 shouldRespond = true;
                 packetType = 'invalid';
-                node.warn(`Tamanho de pacote não suportado: ${packetSize} bytes`);
+                node.warn(`Tamanho de pacote nÃ£o suportado: ${packetSize} bytes`);
                 msg = [startByte, 0x06, 0x01, 0x40, 0x01];
             }
                         
@@ -779,7 +883,7 @@ module.exports = function(RED) {
                     if (connectedSockets.size > 0) {
                         node.status({fill:"green", shape:"dot", text:`${connectedSockets.size} cliente(s) conectado(s)`});
                     } else {
-                        node.status({fill:"yellow", shape:"ring", text:"aguardando conexão"});
+                        node.status({fill:"yellow", shape:"ring", text:"aguardando conexÃ£o"});
                     }
                 });
                 
@@ -798,6 +902,10 @@ module.exports = function(RED) {
                 if (config.enableKeepAlive !== false) {
                     keepAliveTimer = setInterval(sendKeepAlive, keepAliveInterval);
                     node.log(`Keep alive iniciado: ${keepAliveInterval}ms`);
+                }
+                if (config.enableGetState !== false) {
+                    getStateTimer = setInterval(sendGetState, getStateInterval);
+                    node.log(`Get State iniciado: ${getStateInterval}ms`);
                 }
             });
             
@@ -818,7 +926,11 @@ module.exports = function(RED) {
                 keepAliveTimer = null;
                 node.log('Keep alive timer parado');
             }
-            
+            if (getStateTimer) {
+                clearInterval(getStateTimer);
+                getStateTimer = null;
+                node.log('Get State  timer parado');
+            }
             currentAlarmState = {
                 armed_away: false,
                 armed_night: false,
