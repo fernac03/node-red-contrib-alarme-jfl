@@ -7,6 +7,9 @@ module.exports = function(RED) {
         const node = this;
         const net = require('net');
         let server = null;
+        let pgms = null;
+        let particoes = null;
+        let zonas = null;
         
         // Configurações
         const port = parseInt(config.port) || 9999;
@@ -68,46 +71,79 @@ module.exports = function(RED) {
                 case 'A0':
                     modelo = 'Active-32 Duo';
                     temEletrificador = true;
+                    pgms = 4;
+                    particoes= 4;
+                    zonas = 32;
                     break;
                 case 'A1':
                     modelo = 'Active 20 Ultra/GPRS';
                     temEletrificador = true;
+                    pgms = 4;
+                    particoes= 2;
+                    zonas = 22;
                     break;
                 case 'A2':
                     modelo = 'Active 8 Ultra';
                     temEletrificador = false;
+                    pgms = 0;
+                    particoes= 2;
+                    zonas = 12;
                     break;
                 case 'A3':
                     modelo = 'Active 20 Ethernet';
                     temEletrificador = true;
+                    pgms = 4;
+                    particoes= 2;
+                    zonas = 22;
                     break;
                 case 'A4':
                     modelo = 'Active 100 Bus';
                     temEletrificador = true;
+                    pgms = 16;
+                    particoes= 16;
+                    zonas = 99;
                     break;
                 case 'A5':
                     modelo = 'Active 20 Bus';
                     temEletrificador = true;
+                    pgms = 16;
+                    particoes= 2;
+                    zonas = 32;
                     break;
                 case 'A6':
                     modelo = 'Active Full 32';
                     temEletrificador = false;
+                    pgms = 16;
+                    particoes= 4;
+                    zonas = 32;
                     break;
                 case 'A7':
                     modelo = 'Active 20';
                     temEletrificador = true;
+                    pgms = 4;
+                    particoes= 2;
+                    zonas = 32;
                     break;
                 case 'A8':
                     modelo = 'Active 8W';
                     temEletrificador = true;
+                    pgms = 4;
+                    particoes= 2;
+                    zonas = 32;
                     break;
                 case '4B':
                     modelo = 'M-300+';
                     temEletrificador = false;
+                    pgms = 4;
+                    particoes= 0;
+                    zonas = 0;
                     break;
                 case '5D':
                     modelo = 'M-300 Flex';
                     temEletrificador = false;
+                    pgms = 2;
+                    particoes= 0;
+                    zonas = 0;
                     break;
                 default:
                     modelo = `Modelo não identificado (0x${modelHex})`;
@@ -116,7 +152,86 @@ module.exports = function(RED) {
             
             return { modelo, temEletrificador };
         }
-        
+        //Função para inicialiar as zona;
+        function initializeZonas() {
+            const numZonas = global.get('num_zonas') || 8; // valor padrão
+            let zonas = {};
+            node.warn('inicializando as zonas da central#################################################################');
+            for (let i = 0; i < numZonas; i++) {
+                const zonaId = `zona_${i + 1}`;
+                zonas[zonaId] = {
+                name: `Zona ${i + 1}`,
+                state: false
+               };
+          }
+          // Salva as zonas no contexto global
+          global.set('zonas', zonas);
+          return { payload: zonas, topic: 'zonas_inicializadas' };
+        }
+        // Função para inicializar o eletrificador
+        function initializeEletrificador() {
+           node.warn('inicializando eletrificador da central#################################################################');
+           let pgms = global.get('pgms') || {};
+           pgms["eletrificador"] = {
+               name: "Eletrificador",
+               state: "OFF",
+               type: "toggle",
+               switch_number: 99,
+               tipo: "ELETRIFICADOR"
+           };
+           // Salva os PGMs no contexto global
+           global.set('pgms', pgms);
+           return { payload: pgms.eletrificador, topic: 'eletrificador_initialized' };
+         }
+        // Função para Inicializar os  sensores
+        function initializeSensors() {
+           node.warn('inicializando os sensores da central#################################################################');
+           let sensors = global.get('sensors') || {};
+           sensors['bateria'] = {
+              name: "Bateria",
+              state: null,
+              device_class: "BATTERY"
+            };
+            // Salva os sensores no contexto global
+            global.set('sensors', sensors);
+            return { payload: sensors.bateria, topic: 'sensors_initialized' };
+         }
+        // Função para inicializar as partições
+        function initializeParticoes() {
+           const numParticoes = global.get('num_particoes') || 4; // valor padrão
+           node.warn('inicializando as partições da central#################################################################');
+           let sensors = global.get('sensors') || {};  
+           for (let i = 0; i < numParticoes; i++) {
+              const particaoId = `particao_${i + 1}`;
+              sensors[particaoId] = {
+                 name: `Particao ${i + 1}`,
+                 state: "DISARMED",
+                 device_class: "ENUM"
+             };
+           }
+           // Salva os sensores no contexto global
+           global.set('sensors', sensors);
+           return { payload: sensors, topic: 'particoes_initialized' };
+        } 
+        // função para inicializar as pgms
+        function initializePgms() {
+           const numPgms = global.get('num_pgms') || 8; // valor padrão
+           node.warn('inicializando as pgms da central#################################################################');
+           let pgms = global.get('pgms') || {};
+           for (let i = 0; i < numPgms; i++) {
+               const pgmId = `pgm_${i + 1}`;
+               pgms[pgmId] = {
+                   name: `Pgm ${i + 1}`,
+                   state: "OFF",
+                   type: "toggle",
+                   switch_number: i + 1, 
+                   tipo: "PGM"
+              };
+          }
+          // Salva os PGMs no contexto global
+          global.set('pgms', pgms);
+          return { payload: pgms, topic: 'pgms_initialized' };
+        }
         // Função para validação de código de usuário
         function validateUserCode(code) {
             const validCodes = ['1234', '0000', '9999']; // Configurar códigos válidos
@@ -579,15 +694,66 @@ module.exports = function(RED) {
                     temEletrificador: modelInfo.temEletrificador,
                     modelByte: data[41].toString(16).toUpperCase().padStart(2, '0')
                 };
-                
+                particoes = ord(chr(data[51]));
+                eletrificador = false if '00' in f'{data[54]:0>2X}' else True;
                 msg = [startByte, 0x07, 0x01, 0x21, 0x01, 0x01];
                 
                 node.log(`Modelo identificado: ${modelInfo.modelo} (0x${additionalData.modelByte}) - Eletrificador: ${modelInfo.temEletrificador}`);
-                
+                msg = initializePgms();
+                node.log(msg);
+                msg = initializeZonas();
+                node.log(msg);
+                msg = initializeEletrificador();
+                node.log(msg);
+                msg = initializeSensors();
+                node.log(msg);
+                msg = initializeParticoes();
+                node.log(msg);
+            
+            
+
             } else if (packetSize >= 118) {
                 shouldRespond = true;
                 packetType = 'extended_status';
+                const numZonas = global.get('num_zonas') || 100; // valor padrão
+                let processedZones = [];
+                let zona = 1;
+                packetType = "Processando pacote 118 bytes";
+                // Processa 50 bytes a partir da posição 31
+                for (let i = 0; i < 50; i++) {
+                   if (zona > numZonas) break;
+                   const byteData = data[31 + i];
+                   // Extrai nibbles (4 bits superiores e 4 bits inferiores)
+                   const high = (byteData >> 4) & 0x0F;  // 4 bits superiores
+                   const low = byteData & 0x0F;          // 4 bits inferiores
+                   // Processa o nibble superior (high)
+                   if (zona <= numZonas) {
+                      const result = setZoneStatus(zona, high);
+                      processedZones.push({
+                       zona: zona,
+                       nibble: 'high',
+                       byteIndex: 31 + i,
+                       rawValue: high,
+                       result: result
+                      });
+                      zona++;
+                   }
+                   // Processa o nibble inferior (low)  
+                   if (zona <= numZonas) {
+                      const result = setZoneStatus(zona, low);
+                      processedZones.push({
+                        zona: zona,
+                        nibble: 'low', 
+                        byteIndex: 31 + i,
+                        rawValue: low,
+                        result: result
+                      });
+                      zona++;
+                   }
+                   if (zona > numZonas) break;
+                } 
                 msg = [startByte, 0x06, 0x01, 0x40, 0x01];
+                
             } else {
                 packetType = 'invalid';
                 node.warn(`Tamanho de pacote não suportado: ${packetSize} bytes`);
