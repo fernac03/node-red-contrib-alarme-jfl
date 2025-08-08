@@ -435,23 +435,53 @@ module.exports = function(RED) {
                 switch (eventInfo.evento) {
                     // Eventos de armamento
                     case '3441':
-                        eventInfo.armed_away = false;
+                        eventInfo.armed_away = true;
                         eventInfo.armed_night = false;
-                        eventInfo.armed_home = true;
-                        eventInfo.state = 'ARMED_HOME';
+                        eventInfo.armed_home = false;
+                        eventInfo.state = 'ARMED_STAY';
                         eventInfo.description = 'Sistema armado parcialmente';
                         break;
                         
                     case '3401':
-                    case '3407':
-                    case '3403':
-                    case '3404':
-                    case '3408':
-                    case '3409':
-                        eventInfo.armed_away = true;
+                        eventInfo.armed_away = false;
                         eventInfo.armed_night = false;
-                        eventInfo.armed_home = false;
-                        eventInfo.state = 'ARMED_AWAY';
+                        eventInfo.armed_home = true;
+                        eventInfo.state = 'ARMED_HOME';
+                        eventInfo.description = 'Sistema armado';
+                        break;
+                    case '3407':
+                        eventInfo.armed_away = false;
+                        eventInfo.armed_night = false;
+                        eventInfo.armed_home = true;
+                        eventInfo.state = 'ARMED_HOME';
+                        eventInfo.description = 'Sistema armado';
+                        break;
+                    case '3403':
+                        eventInfo.armed_away = false;
+                        eventInfo.armed_night = false;
+                        eventInfo.armed_home = true;
+                        eventInfo.state = 'ARMED_HOME';
+                        eventInfo.description = 'Autoarme por horário programado';
+                        break;
+                    case '3404':
+                        eventInfo.armed_away = false;
+                        eventInfo.armed_night = false;
+                        eventInfo.armed_home = true;
+                        eventInfo.state = 'ARMED_HOME';
+                        eventInfo.description = 'Autoarme por não movimento';
+                        break;
+                    case '3408':
+                        eventInfo.armed_away = false;
+                        eventInfo.armed_night = false;
+                        eventInfo.armed_home = true;
+                        eventInfo.state = 'ARMED_HOME';
+                        eventInfo.description = 'Arme rápido';
+                        break;
+                    case '3409':
+                        eventInfo.armed_away = false;
+                        eventInfo.armed_night = false;
+                        eventInfo.armed_home = true;
+                        eventInfo.state = 'ARMED_HOME';
                         eventInfo.description = 'Sistema armado totalmente';
                         if (eventInfo.evento === '3407') {
                             eventInfo.eletrificador = true;
@@ -461,9 +491,6 @@ module.exports = function(RED) {
                         
                     // Eventos de desarmamento
                     case '1401':
-                    case '1407':
-                    case '1403':
-                    case '1409':
                         eventInfo.armed_home = false;
                         eventInfo.armed_away = false;
                         eventInfo.armed_night = false;
@@ -473,11 +500,71 @@ module.exports = function(RED) {
                         eventInfo.state = 'DISARMED';
                         eventInfo.description = 'Sistema desarmado';
                         break;
+                    case '1407':
+                        eventInfo.armed_home = false;
+                        eventInfo.armed_away = false;
+                        eventInfo.armed_night = false;
+                        eventInfo.alarm_sounding = false;
+                        eventInfo.fire_alarm = false;
+                        eventInfo.eletrificador = false;
+                        eventInfo.state = 'DISARMED';
+                        eventInfo.description = 'Desarme remoto';
+                        break;
+                    case '1403':
+                        eventInfo.armed_home = false;
+                        eventInfo.armed_away = false;
+                        eventInfo.armed_night = false;
+                        eventInfo.alarm_sounding = false;
+                        eventInfo.fire_alarm = false;
+                        eventInfo.eletrificador = false;
+                        eventInfo.state = 'DISARMED';
+                        eventInfo.description = 'Auto-desarme por horário programado';
+                        break;
+                    case '1409':
+                        eventInfo.armed_home = false;
+                        eventInfo.armed_away = false;
+                        eventInfo.armed_night = false;
+                        eventInfo.alarm_sounding = false;
+                        eventInfo.fire_alarm = false;
+                        eventInfo.eletrificador = false;
+                        eventInfo.state = 'DISARMED';
+                        eventInfo.description = 'Desarme por controle remoto ou entrada LIGA';
+                        break;
                         
-                    // Eventos de alarme
                     case '1100':
+                        eventInfo.armed_home = false;
+                        eventInfo.armed_away = false;
+                        eventInfo.armed_night = false;
+                        eventInfo.alarm_sounding = false;
+                        eventInfo.fire_alarm = false;
+                        eventInfo.medical_alarm=true;
+                        eventInfo.eletrificador = false;
+                        eventInfo.state = 'DISARMED';
+                        eventInfo.description = 'Emergencia Médica';
+                        break;
                     case '1101':
+                        eventInfo.armed_home = false;
+                        eventInfo.armed_away = false;
+                        eventInfo.armed_night = false;
+                        eventInfo.alarm_sounding = false;
+                        eventInfo.fire_alarm = true;
+                        eventInfo.medical_alarm=false;
+                        eventInfo.eletrificador = false;
+                        eventInfo.state = 'DISARMED';
+                        eventInfo.description = 'Emergencia Médica';
+                        break;
                     case '1102':
+                        eventInfo.armed_home = false;
+                        eventInfo.armed_away = false;
+                        eventInfo.armed_night = false;
+                        eventInfo.alarm_sounding = false;
+                        eventInfo.fire_alarm = false;
+                        eventInfo.medical_alarm = true;
+                        eventInfo.panic = true;
+                        eventInfo.eletrificador = false;
+                        eventInfo.state = 'DISARMED';
+                        eventInfo.description = 'Panico';
+                        break;
                     case '1103':
                     case '1104':
                     case '1105':
@@ -494,21 +581,33 @@ module.exports = function(RED) {
                         
                     // Eventos de incÃªndio
                     case '1130':
+                         if (eventInfo.armed_home || eventInfo.armed_away) {
+                            eventInfo.description = 'Disparo de zona';
+                         }    
+                        break;
                     case '1134':
+                         if (eventInfo.armed_home || eventInfo.armed_away) {
+                            eventInfo.description = 'Disparo de zona';
+                         }                          break;
                     case '1137':
                         if (eventInfo.armed_home || eventInfo.armed_away) {
-                            eventInfo.fire_alarm = true;
-                            eventInfo.state = 'FIRE_ALARM';
-                            eventInfo.description = 'Alarme de incÃªndio';
+                            eventInfo.description = 'Alarme de zona tipo tamper';
                         }
                         break;
-                        
-                    // RestauraÃ§Ã£o de incÃªndio
                     case '3130':
+                        if (eventInfo.armed_home || eventInfo.armed_away) {
+                            eventInfo.description = 'Restauração do disparo da zona';
+                        }
+                        break;
                     case '3134':
+                        f (eventInfo.armed_home || eventInfo.armed_away) {
+                            eventInfo.description = 'estauração do alarme de porta aberta';
+                        }
+                        break;
                     case '3137':
-                        eventInfo.fire_alarm = false;
-                        eventInfo.description = 'Alarme de incÃªndio restaurado';
+                        if (eventInfo.armed_home || eventInfo.armed_away) {
+                            eventInfo.description = 'Restauração do alrme de zona tipo tamper';
+                        }
                         break;
                         
                     // Eventos de zona
