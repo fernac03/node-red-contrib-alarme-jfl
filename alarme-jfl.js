@@ -945,6 +945,7 @@ module.exports = function(RED) {
                         timestamp: new Date().toISOString(),
                         clientIP: socket.remoteAddress,
                         clientPort: socket.remotePort,
+                        zonas: zonas,
                         ...additionalData
                     }
                 };
