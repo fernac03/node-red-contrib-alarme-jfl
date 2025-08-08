@@ -600,7 +600,7 @@ module.exports = function(RED) {
                         }
                         break;
                     case '3134':
-                        f (eventInfo.armed_home || eventInfo.armed_away) {
+                        if (eventInfo.armed_home || eventInfo.armed_away) {
                             eventInfo.description = 'estauração do alarme de porta aberta';
                         }
                         break;
