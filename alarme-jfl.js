@@ -7,9 +7,11 @@ module.exports = function(RED) {
         const node = this;
         const net = require('net');
         let server = null;
-        let pgms = null;
-        let particoes = null;
+        let pgms = {};
+        let particoes = {};
         let numZonas = null;
+        let numPgms =null;
+        let numParticoes = null;
         let sensors = {};
         let zonas = {};
         // ConfiguraÃ§Ãµes
@@ -75,87 +77,89 @@ module.exports = function(RED) {
                 case 'A0':
                     modelo = 'Active-32 Duo';
                     temEletrificador = true;
-                    pgms = 4;
-                    particoes= 4;
+                    numPgms = 4;
+                    numParticoes= 4;
                     numZonas = 32;
                     break;
                 case 'A1':
                     modelo = 'Active 20 Ultra/GPRS';
                     temEletrificador = true;
-                    pgms = 4;
-                    particoes= 2;
+                    numPgms = 4;
+                    numParticoes= 2;
                     numZonas = 22;
                     break;
                 case 'A2':
                     modelo = 'Active 8 Ultra';
                     temEletrificador = false;
-                    pgms = 0;
-                    particoes= 2;
+                    numPgms = 0;
+                    numParticoes= 2;
                     numZonas = 12;
                     break;
                 case 'A3':
                     modelo = 'Active 20 Ethernet';
                     temEletrificador = true;
-                    pgms = 4;
-                    particoes= 2;
+                    numPgms = 4;
+                    numParticoes= 2;
                     numZonas = 22;
                     break;
                 case 'A4':
                     modelo = 'Active 100 Bus';
                     temEletrificador = true;
-                    pgms = 16;
-                    particoes= 16;
+                    numPgms = 16;
+                    numParticoes= 16;
                     numZonas = 99;
                     break;
                 case 'A5':
                     modelo = 'Active 20 Bus';
                     temEletrificador = true;
-                    pgms = 16;
-                    particoes= 2;
+                    numPgms = 16;
+                    numParticoes= 2;
                     numZonas = 32;
                     break;
                 case 'A6':
                     modelo = 'Active Full 32';
                     temEletrificador = false;
-                    pgms = 16;
-                    particoes= 4;
+                    numPgms = 16;
+                    numParticoes= 4;
                     numZonas = 32;
                     break;
                 case 'A7':
                     modelo = 'Active 20';
                     temEletrificador = true;
-                    pgms = 4;
-                    particoes= 2;
+                    numPgms = 4;
+                    numParticoes= 2;
                     numZonas = 32;
                     break;
                 case 'A8':
                     modelo = 'Active 8W';
                     temEletrificador = true;
-                    pgms = 4;
-                    particoes= 2;
+                    numPgms = 4;
+                    numParticoes= 2;
                     numZonas = 32;
                     break;
                 case '4B':
                     modelo = 'M-300+';
                     temEletrificador = false;
-                    pgms = 4;
-                    particoes= 0;
+                    numPgms = 4;
+                    numParticoes= 0;
                     numZonas = 0;
                     break;
                 case '5D':
                     modelo = 'M-300 Flex';
                     temEletrificador = false;
-                    pgms = 2;
-                    particoes= 0;
+                    numPgms = 2;
+                    numParticoes= 0;
                     numZonas = 0;
                     break;
                 default:
                     modelo = `Modelo nÃ£o identificado (0x${modelHex})`;
                     temEletrificador = false;
                     numZonas = 0;
+                    numPgms = 0;
+                    numParticoes = 0;
             }
             
-            return { modelo, temEletrificador,numZonas };
+            return { modelo, temEletrificador,numZonas, numPgms, numParticoes };
         }
         //FunÃ§Ã£o para atualizar as zonas;
         function setZoneStatus(zona, status) {
@@ -189,10 +193,72 @@ module.exports = function(RED) {
          }
     
        }
- 
+        // FunÃ§Ã£o para atualizar sensor de bateria;
+        function setBatteryStatus(batteryByte) {
+           // Função para interpretar nível da bateria
+             function interpretBatteryLevel(batteryByte) {
+               let percentage;
+               let description;
+               if (batteryByte >= 240) {
+                  percentage = 100;
+                  description = "Bateria carregada";
+               } else if (batteryByte >= 200) {
+                 percentage = 80;
+                 description = "Bateria boa";
+               } else if (batteryByte >= 150) {
+                 percentage = 60;
+                 description = "Bateria média";
+               } else if (batteryByte >= 100) {
+                 percentage = 40;
+                 description = "Bateria baixa";
+               } else if (batteryByte >= 50) {
+                 percentage = 20;
+                 description = "Bateria muito baixa";
+               } else {
+                 percentage = 0;
+                 description = "Bateria crítica";
+               }
+               return { percentage, description };
+             }
+            const batteryInfo = interpretBatteryLevel(batteryByte);
+            sensors['bateria'] = {
+              name: "Bateria",
+              state: batteryInfo.percentage,
+              device_class: "BATTERY",
+              description: batteryInfo.description,
+              raw_value: batteryByte
+           };
+       }
+        //FunÃ§Ã£o para atualizar as pgms;
+        function setPgmStatus(byteValue, posicao) {
+            const binary = byteValue.toString(2).padStart(8, '0'); // Converte para binário de 8 bits
+            for (let i = 0; i < binary.length; i++) {
+               let pgmNumber;
+               if (posicao === 2) {
+                   pgmNumber = 16 - i;
+               } else {
+                  pgmNumber = 8 - i;
+               }
+             const pgmId = `pgm_${pgmNumber}`;
+             // Verifica se o PGM existe
+             if (pgms[pgmId]) {
+                 const bit = parseInt(binary[i]);
+                 const newState = bit > 0 ? "STATE_ON" : "STATE_OFF";
+                 pgms[pgmId] = {
+                    name: `Pgm ${pgmNumber}`,
+                    type: "toggle", // corrigido "toogle" -> "toggle"
+                    tipo: "PGM",
+                    state: newState,
+                    switch_number: pgmNumber
+                 };
+            });
+          }
+        }
+    
+        }
         //FunÃ§Ã£o para inicialiar as zona;
         function initializeZonas() {
-            node.warn('inicializando as zonas da central#################################################################');
+            node.warn('inicializand as zonas da central#################################################################');
             for (let i = 0; i < numZonas; i++) {
                 const zonaId = `zona_${i + 1}`;
                 zonas[zonaId] = {
@@ -207,36 +273,19 @@ module.exports = function(RED) {
         // FunÃ§Ã£o para inicializar o eletrificador
         function initializeEletrificador() {
            node.warn('inicializando eletrificador da central#################################################################');
-           let pgms = global.get('pgms') || {};
-           pgms["eletrificador"] = {
-               name: "Eletrificador",
-               state: "OFF",
-               type: "toggle",
-               switch_number: 99,
-               tipo: "ELETRIFICADOR"
-           };
-           // Salva os PGMs no contexto global
-           global.set('pgms', pgms);
-           return { payload: pgms.eletrificador, topic: 'eletrificador_initialized' };
          }
         // FunÃ§Ã£o para Inicializar os  sensores
         function initializeSensors() {
            node.warn('inicializando os sensores da central#################################################################');
-           
            sensors['bateria'] = {
               name: "Bateria",
               state: null,
               device_class: "BATTERY"
             };
-            // Salva os sensores no contexto global
-            global.set('sensors', sensors);
-            return { payload: sensors.bateria, topic: 'sensors_initialized' };
          }
         // FunÃ§Ã£o para inicializar as partiÃ§Ãµes
         function initializeParticoes() {
-           const numParticoes = global.get('num_particoes') || 4; // valor padrÃ£o
            node.warn('inicializando as partiÃ§Ãµes da central#################################################################');
-           let sensors = global.get('sensors') || {};  
            for (let i = 0; i < numParticoes; i++) {
               const particaoId = `particao_${i + 1}`;
               sensors[particaoId] = {
@@ -245,15 +294,11 @@ module.exports = function(RED) {
                  device_class: "ENUM"
              };
            }
-           // Salva os sensores no contexto global
-           global.set('sensors', sensors);
-           return { payload: sensors, topic: 'particoes_initialized' };
+           
         } 
         // funÃ§Ã£o para inicializar as pgms
         function initializePgms() {
-           const numPgms = global.get('num_pgms') || 8; // valor padrÃ£o
            node.warn('inicializando as pgms da central#################################################################');
-           let pgms = global.get('pgms') || {};
            for (let i = 0; i < numPgms; i++) {
                const pgmId = `pgm_${i + 1}`;
                pgms[pgmId] = {
@@ -264,9 +309,6 @@ module.exports = function(RED) {
                    tipo: "PGM"
               };
           }
-          // Salva os PGMs no contexto global
-          global.set('pgms', pgms);
-          return { payload: pgms, topic: 'pgms_initialized' };
         }
         // FunÃ§Ã£o para validaÃ§Ã£o de cÃ³digo de usuÃ¡rio
         function validateUserCode(code) {
@@ -867,12 +909,10 @@ module.exports = function(RED) {
                 //msg = initializePgms();
                 //node.log(msg);
                 initializeZonas();
-                //msg = initializeEletrificador();
-                //node.log(msg);
-                //msg = initializeSensors();
-                //node.log(msg);
-                //msg = initializeParticoes();
-                //node.log(msg);
+                initializeEletrificador();
+                initializeSensors();
+                initializeParticoes();
+                initializePgms();
             
             
 
@@ -882,6 +922,10 @@ module.exports = function(RED) {
                 let zona = 1;
                  
                 node.warn("Processando pacote 118 bytes");
+                // processa 1 byte na posicao 12;
+                setBatteryStatus(data[12]);
+                // processa 2 bytes a partir da posicao 87;
+                setPgmStatus(data[87+2]);
                 // Processa 50 bytes a partir da posiÃ§Ã£o 31
                 for (let i = 0; i < 50; i++) {
                    if (zona > numZonas) break;
@@ -892,26 +936,12 @@ module.exports = function(RED) {
                      // Processa o nibble superior (high)
                      if (zona <= numZonas) {
                          const result = setZoneStatus(zona, high);
-                         processedZones.push({
-                           zona: zona,
-                           nibble: 'high',
-                           byteIndex: 31 + i,
-                           rawValue: high,
-                           result: result
-                         });
                          zona++;
                      }
                      // Processa o nibble inferior (low)  
                      if (zona <= numZonas) {
                        const result = setZoneStatus(zona, low);
-                       processedZones.push({
-                         zona: zona,
-                         nibble: 'low', 
-                         byteIndex: 31 + i,
-                         rawValue: low,
-                         result: result
-                      });
-                      zona++;
+                       zona++;
                    }
                   if (zona > numZonas) break;
                }
@@ -946,6 +976,8 @@ module.exports = function(RED) {
                         clientIP: socket.remoteAddress,
                         clientPort: socket.remotePort,
                         zonas: zonas,
+                        sensores: sensors,
+                        pgms: pgms,
                         ...additionalData
                     }
                 };
