@@ -1,4 +1,4 @@
-// alarme-jfl.js - VersÃ£o Final
+// alarme-jfl.js - Versão com comandos PGM
 module.exports = function(RED) {
     "use strict";
     
@@ -10,18 +10,18 @@ module.exports = function(RED) {
         let pgms = {};
         let particoes = {};
         let numZonas = null;
-        let numPgms =null;
+        let numPgms = null;
         let numParticoes = null;
         let sensors = {};
         let zonas = {};
-        // ConfiguraÃ§Ãµes
+        
+        // Configurações
         const port = parseInt(config.port) || 9999;
         const host = config.host || '0.0.0.0';
         const keepAliveInterval = parseInt(config.keepAliveInterval) || 30000;
         const getStateInterval = parseInt(config.getStateInterval) || 5;
         
         let keepAliveTimer = null;
-
         let getStateTimer = null;
         let connectedSockets = new Set();
         let clientStartBytes = new Map();
@@ -37,15 +37,17 @@ module.exports = function(RED) {
             state: 'DISARMED'
         };
         
-        // CÃ³digos de comando para o alarme
+        // Códigos de comando para o alarme
         const alarmCommands = {
             armAway: [0x06, 0x01, 0x4E, 0x01],
             armStay: [0x06, 0x01, 0x53, 0x01],
             disarm: [0x06, 0x01, 0x4F, 0x01],
-            
+            // Comandos PGM adicionados (sem o último byte - será calculado o checksum)
+            pgmOn: [0x07, 0x01, 0x01, 0x50], // + pgm_number (checksum será calculado)
+            pgmOff: [0x07, 0x01, 0x01, 0x51], // + pgm_number (checksum será calculado)
         };
         
-        // FunÃ§Ã£o para calcular checksum XOR
+        // Função para calcular checksum XOR
         function calculateChecksum(buffer) {
             let checksum = 0;
             for (let i = 0; i < buffer.length; i++) {
@@ -54,14 +56,14 @@ module.exports = function(RED) {
             return checksum;
         }
         
-        // FunÃ§Ã£o para criar mensagem de resposta padrÃ£o
+        // Função para criar mensagem de resposta padrão
         function createResponseMessage(msg) {
             const baseMessage = Buffer.from(msg);
             const checksum = calculateChecksum(baseMessage);
             return Buffer.concat([baseMessage, Buffer.from([checksum])]);
         }
         
-        // FunÃ§Ã£o para identificar modelo da central baseado no byte 41
+        // Função para identificar modelo da central baseado no byte 41
         function identifyModel(data) {
             if (data.length < 42) {
                 return { modelo: 'Desconhecido', temEletrificador: false };
@@ -78,90 +80,91 @@ module.exports = function(RED) {
                     modelo = 'Active-32 Duo';
                     temEletrificador = true;
                     numPgms = 4;
-                    numParticoes= 4;
+                    numParticoes = 4;
                     numZonas = 32;
                     break;
                 case 'A1':
                     modelo = 'Active 20 Ultra/GPRS';
                     temEletrificador = true;
                     numPgms = 4;
-                    numParticoes= 2;
+                    numParticoes = 2;
                     numZonas = 22;
                     break;
                 case 'A2':
                     modelo = 'Active 8 Ultra';
                     temEletrificador = false;
                     numPgms = 0;
-                    numParticoes= 2;
+                    numParticoes = 2;
                     numZonas = 12;
                     break;
                 case 'A3':
                     modelo = 'Active 20 Ethernet';
                     temEletrificador = true;
                     numPgms = 4;
-                    numParticoes= 2;
+                    numParticoes = 2;
                     numZonas = 22;
                     break;
                 case 'A4':
                     modelo = 'Active 100 Bus';
                     temEletrificador = true;
                     numPgms = 16;
-                    numParticoes= 16;
+                    numParticoes = 16;
                     numZonas = 99;
                     break;
                 case 'A5':
                     modelo = 'Active 20 Bus';
                     temEletrificador = true;
                     numPgms = 16;
-                    numParticoes= 2;
+                    numParticoes = 2;
                     numZonas = 32;
                     break;
                 case 'A6':
                     modelo = 'Active Full 32';
                     temEletrificador = false;
                     numPgms = 16;
-                    numParticoes= 4;
+                    numParticoes = 4;
                     numZonas = 32;
                     break;
                 case 'A7':
                     modelo = 'Active 20';
                     temEletrificador = true;
                     numPgms = 4;
-                    numParticoes= 2;
+                    numParticoes = 2;
                     numZonas = 32;
                     break;
                 case 'A8':
                     modelo = 'Active 8W';
                     temEletrificador = true;
                     numPgms = 4;
-                    numParticoes= 2;
+                    numParticoes = 2;
                     numZonas = 32;
                     break;
                 case '4B':
                     modelo = 'M-300+';
                     temEletrificador = false;
                     numPgms = 4;
-                    numParticoes= 0;
+                    numParticoes = 0;
                     numZonas = 0;
                     break;
                 case '5D':
                     modelo = 'M-300 Flex';
                     temEletrificador = false;
                     numPgms = 2;
-                    numParticoes= 0;
+                    numParticoes = 0;
                     numZonas = 0;
                     break;
                 default:
-                    modelo = `Modelo nÃ£o identificado (0x${modelHex})`;
+                    modelo = `Modelo não identificado (0x${modelHex})`;
                     temEletrificador = false;
                     numZonas = 0;
                     numPgms = 0;
                     numParticoes = 0;
             }
             
-            return { modelo, temEletrificador,numZonas, numPgms, numParticoes };
+            return { modelo, temEletrificador, numZonas, numPgms, numParticoes };
         }
-        //FunÃ§Ã£o para atualizar as zonas;
+
+        // Função para atualizar as zonas
         function setZoneStatus(zona, status) {
            const statusMap = {
               0: "disabled",
@@ -191,9 +194,9 @@ module.exports = function(RED) {
               "name": `Zona ${zona}`
             };
          }
-    
-       }
-        // FunÃ§Ã£o para atualizar sensor de bateria;
+        }
+        
+        // Função para atualizar sensor de bateria
         function setBatteryStatus(batteryByte) {
            // Função para interpretar nível da bateria
              function interpretBatteryLevel(batteryByte) {
@@ -229,7 +232,8 @@ module.exports = function(RED) {
               raw_value: batteryByte
            };
        }
-        //FunÃ§Ã£o para atualizar as pgms;
+        
+        // Função para atualizar as PGMs (corrigido)
         function setPgmStatus(byteValue, posicao) {
             const binary = byteValue.toString(2).padStart(8, '0'); // Converte para binário de 8 bits
             for (let i = 0; i < binary.length; i++) {
@@ -246,19 +250,18 @@ module.exports = function(RED) {
                  const newState = bit > 0 ? "STATE_ON" : "STATE_OFF";
                  pgms[pgmId] = {
                     name: `Pgm ${pgmNumber}`,
-                    type: "toggle", // corrigido "toogle" -> "toggle"
+                    type: "toggle",
                     tipo: "PGM",
                     state: newState,
                     switch_number: pgmNumber
                  };
-            });
+             }
           }
         }
-    
-        }
-        //FunÃ§Ã£o para inicialiar as zona;
+        
+        // Função para inicializar as zonas
         function initializeZonas() {
-            node.warn('inicializand as zonas da central#################################################################');
+            node.warn('Inicializando as zonas da central');
             for (let i = 0; i < numZonas; i++) {
                 const zonaId = `zona_${i + 1}`;
                 zonas[zonaId] = {
@@ -266,26 +269,27 @@ module.exports = function(RED) {
                 state: false
                };
           }
-          // Salva as zonas no contexto global
-          node.warn('zonas da central Inicializadas #################################################################');
-        
+          node.warn('Zonas da central inicializadas');
         }
-        // FunÃ§Ã£o para inicializar o eletrificador
+        
+        // Função para inicializar o eletrificador
         function initializeEletrificador() {
-           node.warn('inicializando eletrificador da central#################################################################');
+           node.warn('Inicializando eletrificador da central');
          }
-        // FunÃ§Ã£o para Inicializar os  sensores
+        
+        // Função para inicializar os sensores
         function initializeSensors() {
-           node.warn('inicializando os sensores da central#################################################################');
+           node.warn('Inicializando os sensores da central');
            sensors['bateria'] = {
               name: "Bateria",
               state: null,
               device_class: "BATTERY"
             };
          }
-        // FunÃ§Ã£o para inicializar as partiÃ§Ãµes
+        
+        // Função para inicializar as partições
         function initializeParticoes() {
-           node.warn('inicializando as partiÃ§Ãµes da central#################################################################');
+           node.warn('Inicializando as partições da central');
            for (let i = 0; i < numParticoes; i++) {
               const particaoId = `particao_${i + 1}`;
               sensors[particaoId] = {
@@ -294,11 +298,11 @@ module.exports = function(RED) {
                  device_class: "ENUM"
              };
            }
-           
         } 
-        // funÃ§Ã£o para inicializar as pgms
+        
+        // Função para inicializar as PGMs
         function initializePgms() {
-           node.warn('inicializando as pgms da central#################################################################');
+           node.warn('Inicializando as PGMs da central');
            for (let i = 0; i < numPgms; i++) {
                const pgmId = `pgm_${i + 1}`;
                pgms[pgmId] = {
@@ -310,13 +314,14 @@ module.exports = function(RED) {
               };
           }
         }
-        // FunÃ§Ã£o para validaÃ§Ã£o de cÃ³digo de usuÃ¡rio
+        
+        // Função para validação de código de usuário
         function validateUserCode(code) {
-            const validCodes = ['1234', '0000', '9999']; // Configurar cÃ³digos vÃ¡lidos
+            const validCodes = ['1234', '0000', '9999']; // Configurar códigos válidos
             return validCodes.includes(code);
         }
         
-        // FunÃ§Ã£o para log de eventos para auditoria
+        // Função para log de eventos para auditoria
         function logEvent(eventType, details) {
             const logEntry = {
                 timestamp: new Date().toISOString(),
@@ -336,17 +341,17 @@ module.exports = function(RED) {
             node.log(`[LOG] ${eventType}: ${JSON.stringify(details)}`);
         }
         
-        // FunÃ§Ã£o para enviar comando para todos os clientes conectados
+        // Função para enviar comando para todos os clientes conectados
         function sendAlarmCommand(command, commandName, userCode = null) {
-            // Validar cÃ³digo de usuÃ¡rio se fornecido
+            // Validar código de usuário se fornecido
             if (userCode && !validateUserCode(userCode)) {
-                node.warn(`CÃ³digo de usuÃ¡rio invÃ¡lido para comando ${commandName}`);
+                node.warn(`Código de usuário inválido para comando ${commandName}`);
                 logEvent('INVALID_CODE', { command: commandName, code: '***' });
                 
                 const errorMsg = {
                     payload: {
                         type: 'error',
-                        message: 'CÃ³digo de usuÃ¡rio invÃ¡lido',
+                        message: 'Código de usuário inválido',
                         command: commandName,
                         timestamp: new Date().toISOString()
                     }
@@ -388,7 +393,7 @@ module.exports = function(RED) {
                 }
             });
             
-            // Enviar dados para saÃ­da do nÃ³
+            // Enviar dados para saída do nó
             const msg = {
                 payload: {
                     type: 'command',
@@ -412,7 +417,7 @@ module.exports = function(RED) {
             return successCount > 0;
         }
         
-        // FunÃ§Ãµes especÃ­ficas para cada comando
+        // Funções específicas para cada comando de alarme
         function armAway() {
             return sendAlarmCommand(alarmCommands.armAway, 'ARM_AWAY');
         }
@@ -430,7 +435,7 @@ module.exports = function(RED) {
                     const errorMsg = {
                         payload: {
                             type: 'error',
-                            message: 'CÃ³digo de usuÃ¡rio invÃ¡lido',
+                            message: 'Código de usuário inválido',
                             timestamp: new Date().toISOString()
                         }
                     };
@@ -447,7 +452,84 @@ module.exports = function(RED) {
             return sendAlarmCommand(command, commandName, code);
         }
         
-        // FunÃ§Ã£o para processar eventos de pacotes de 24 bytes
+        // NOVAS FUNÇÕES PARA CONTROLE DE PGM
+        function pgmOn(pgmNumber) {
+            // Validar número da PGM
+            if (!pgmNumber || pgmNumber < 1 || pgmNumber > 16) {
+                node.warn(`Número de PGM inválido: ${pgmNumber}. Deve ser entre 1 e 16`);
+                const errorMsg = {
+                    payload: {
+                        type: 'error',
+                        message: 'Número de PGM inválido. Deve ser entre 1 e 16',
+                        pgm: pgmNumber,
+                        timestamp: new Date().toISOString()
+                    }
+                };
+                node.send(errorMsg);
+                return false;
+            }
+            
+            // Verificar se a PGM existe para o modelo da central
+            if (pgmNumber > numPgms) {
+                node.warn(`PGM ${pgmNumber} não existe neste modelo de central (máx: ${numPgms})`);
+                const errorMsg = {
+                    payload: {
+                        type: 'error',
+                        message: `PGM ${pgmNumber} não existe neste modelo de central (máximo: ${numPgms})`,
+                        pgm: pgmNumber,
+                        timestamp: new Date().toISOString()
+                    }
+                };
+                node.send(errorMsg);
+                return false;
+            }
+            
+            // Construir comando: [0x07, 0x01, 0x01, 0x50, pgm_byte] (checksum será calculado)
+            const pgmByte = pgmNumber; // PGM 1 = 0x01, PGM 2 = 0x02, etc.
+            const command = [...alarmCommands.pgmOn, pgmByte];
+            
+            return sendAlarmCommand(command, `PGM_ON_${pgmNumber}`);
+        }
+        
+        function pgmOff(pgmNumber) {
+            // Validar número da PGM
+            if (!pgmNumber || pgmNumber < 1 || pgmNumber > 16) {
+                node.warn(`Número de PGM inválido: ${pgmNumber}. Deve ser entre 1 e 16`);
+                const errorMsg = {
+                    payload: {
+                        type: 'error',
+                        message: 'Número de PGM inválido. Deve ser entre 1 e 16',
+                        pgm: pgmNumber,
+                        timestamp: new Date().toISOString()
+                    }
+                };
+                node.send(errorMsg);
+                return false;
+            }
+            
+            // Verificar se a PGM existe para o modelo da central
+            if (pgmNumber > numPgms) {
+                node.warn(`PGM ${pgmNumber} não existe neste modelo de central (máx: ${numPgms})`);
+                const errorMsg = {
+                    payload: {
+                        type: 'error',
+                        message: `PGM ${pgmNumber} não existe neste modelo de central (máximo: ${numPgms})`,
+                        pgm: pgmNumber,
+                        timestamp: new Date().toISOString()
+                    }
+                };
+                node.send(errorMsg);
+                return false;
+            }
+            
+            // Construir comando: [0x07, 0x01, 0x01, 0x51, pgm_byte] (checksum será calculado)
+            const pgmByte = pgmNumber; // PGM 1 = 0x01, PGM 2 = 0x02, etc.
+            const command = [...alarmCommands.pgmOff, pgmByte];
+            
+            return sendAlarmCommand(command, `PGM_OFF_${pgmNumber}`);
+        }
+        
+        // Função para processar eventos de pacotes de 24 bytes
         function processEvent24(data) {
             let eventInfo = {
                 evento: '',
@@ -468,12 +550,12 @@ module.exports = function(RED) {
             if (data.length >= 12) {
                 eventInfo.evento = data.slice(8, 12).toString('ascii');
                 
-                // Extrair zona (se aplicÃ¡vel)
+                // Extrair zona (se aplicável)
                 if (data.length >= 16) {
                     eventInfo.zone = data.slice(12, 16).toString('ascii');
                 }
                 
-                // Processar eventos conforme a lÃ³gica expandida
+                // Processar eventos conforme a lógica expandida
                 switch (eventInfo.evento) {
                     // Eventos de armamento
                     case '3441':
@@ -621,7 +703,16 @@ module.exports = function(RED) {
                         }
                         break;
                         
-                    // Eventos de incÃªndio
+                    // Eventos de PGM adicionados
+                    case '1422':
+                        eventInfo.description = 'PGM acionada pelo usuário';
+                        break;
+                        
+                    case '3422':
+                        eventInfo.description = 'PGM desacionada pelo usuário';
+                        break;
+                        
+                    // Eventos de incêndio
                     case '1130':
                          if (eventInfo.armed_home || eventInfo.armed_away) {
                             eventInfo.description = 'Disparo de zona';
@@ -630,7 +721,8 @@ module.exports = function(RED) {
                     case '1134':
                          if (eventInfo.armed_home || eventInfo.armed_away) {
                             eventInfo.description = 'Disparo de zona';
-                         }                          break;
+                         }                          
+                        break;
                     case '1137':
                         if (eventInfo.armed_home || eventInfo.armed_away) {
                             eventInfo.description = 'Alarme de zona tipo tamper';
@@ -643,12 +735,12 @@ module.exports = function(RED) {
                         break;
                     case '3134':
                         if (eventInfo.armed_home || eventInfo.armed_away) {
-                            eventInfo.description = 'estauração do alarme de porta aberta';
+                            eventInfo.description = 'Restauração do alarme de porta aberta';
                         }
                         break;
                     case '3137':
                         if (eventInfo.armed_home || eventInfo.armed_away) {
-                            eventInfo.description = 'Restauração do alrme de zona tipo tamper';
+                            eventInfo.description = 'Restauração do alarme de zona tipo tamper';
                         }
                         break;
                         
@@ -697,21 +789,10 @@ module.exports = function(RED) {
                         eventInfo.description = 'Energia AC restaurada';
                         break;
                         
-                    // Eventos de usuÃ¡rio
-                    case '1422':
-                        eventInfo.state = 'PGM acionada pelo usuÃ¡rio';
-                        eventInfo.description = 'PGM acionada manualmente';
-                        break;
-                        
-                    case '3422':
-                        eventInfo.state = 'PGM desacionada pelo usuÃ¡rio';
-                        eventInfo.description = 'PGM desacionada manualmente';
-                        break;
-                        
-                    // Teste periÃ³dico
+                    // Teste periódico
                     case '1602':
                         eventInfo.state = 'Teste Periodico';
-                        eventInfo.description = 'Teste periÃ³dico realizado';
+                        eventInfo.description = 'Teste periódico realizado';
                         break;
                         
                     default:
@@ -736,11 +817,12 @@ module.exports = function(RED) {
             return eventInfo;
         }
         
-        // FunÃ§Ã£o para processar mensagens de entrada (comandos)
+        // Função para processar mensagens de entrada (comandos) - ATUALIZADA
         node.on('input', function(msg) {
             if (msg.payload && typeof msg.payload === 'object' && msg.payload.command) {
                 const command = msg.payload.command.toUpperCase();
                 const code = msg.payload.code;
+                const pgmNumber = msg.payload.pgm || msg.payload.pgmNumber;
                 
                 switch(command) {
                     case 'ARM_AWAY':
@@ -752,11 +834,44 @@ module.exports = function(RED) {
                     case 'DISARM':
                         disarm(code);
                         break;
+                    case 'PGM_ON':
+                        if (pgmNumber) {
+                            pgmOn(parseInt(pgmNumber));
+                        } else {
+                            node.warn('Comando PGM_ON requer o número da PGM (pgm ou pgmNumber)');
+                            const errorMsg = {
+                                payload: {
+                                    type: 'error',
+                                    message: 'Comando PGM_ON requer o número da PGM',
+                                    timestamp: new Date().toISOString()
+                                }
+                            };
+                            node.send(errorMsg);
+                        }
+                        break;
+                    case 'PGM_OFF':
+                        if (pgmNumber) {
+                            pgmOff(parseInt(pgmNumber));
+                        } else {
+                            node.warn('Comando PGM_OFF requer o número da PGM (pgm ou pgmNumber)');
+                            const errorMsg = {
+                                payload: {
+                                    type: 'error',
+                                    message: 'Comando PGM_OFF requer o número da PGM',
+                                    timestamp: new Date().toISOString()
+                                }
+                            };
+                            node.send(errorMsg);
+                        }
+                        break;
                     case 'GET_STATE':
                         const stateMsg = {
                             payload: {
                                 type: 'current_state',
                                 ...currentAlarmState,
+                                zonas: zonas,
+                                sensores: sensors,
+                                pgms: pgms,
                                 timestamp: new Date().toISOString()
                             }
                         };
@@ -772,8 +887,8 @@ module.exports = function(RED) {
                         node.send(clearMsg);
                         break;
                     default:
-                        node.warn(`Comando nÃ£o reconhecido: ${command}`);
-                        node.warn(`Comandos disponÃ­veis: ARM_AWAY, ARM_STAY, DISARM, GET_STATE, CLEAR_ALERTS`);
+                        node.warn(`Comando não reconhecido: ${command}`);
+                        node.warn(`Comandos disponíveis: ARM_AWAY, ARM_STAY, DISARM, PGM_ON, PGM_OFF, GET_STATE, CLEAR_ALERTS`);
                 }
             } else if (msg.payload && typeof msg.payload === 'string') {
                 const command = msg.payload.toUpperCase();
@@ -793,19 +908,23 @@ module.exports = function(RED) {
                             payload: {
                                 type: 'current_state',
                                 ...currentAlarmState,
+                                zonas: zonas,
+                                sensores: sensors,
+                                pgms: pgms,
                                 timestamp: new Date().toISOString()
                             }
                         };
                         node.send(stateMsg);
                         break;
                     default:
-                        node.warn(`Comando nÃ£o reconhecido: ${command}`);
-                        node.warn(`Comandos disponÃ­veis: ARM_AWAY, ARM_STAY, DISARM, GET_STATE`);
+                        node.warn(`Comando não reconhecido: ${command}`);
+                        node.warn(`Comandos disponíveis: ARM_AWAY, ARM_STAY, DISARM, GET_STATE`);
+                        node.warn(`Para comandos PGM use objeto: {command: "PGM_ON", pgm: 1}`);
                 }
             }
         });
         
-        // FunÃ§Ã£o para enviar keep alive para todos os clientes conectados
+        // Função para enviar keep alive para todos os clientes conectados
         function sendKeepAlive() {
             if (connectedSockets.size > 0) {
                 connectedSockets.forEach(socket => {
@@ -837,7 +956,8 @@ module.exports = function(RED) {
                 node.status({fill:"green", shape:"dot", text:`keep alive enviado (${connectedSockets.size} clientes)`});
             }
         }
-        // FunÃ§Ã£o para solicitar status da central
+        
+        // Função para solicitar status da central
         function sendGetState() {
             if (connectedSockets.size > 0) {
                 connectedSockets.forEach(socket => {
@@ -849,7 +969,7 @@ module.exports = function(RED) {
                             if (err) {
                                 node.error(`Erro ao solicitar o status para ${socket.remoteAddress}: ${err.message}`);
                             } else {
-                                node.log(`Solicitacao de status  enviado para ${socket.remoteAddress}: ${getStateMessage.toString('hex')}`);
+                                node.log(`Solicitacao de status enviado para ${socket.remoteAddress}: ${getStateMessage.toString('hex')}`);
                             }
                         });
                     }
@@ -869,7 +989,8 @@ module.exports = function(RED) {
                 node.status({fill:"green", shape:"dot", text:`get State enviado (${connectedSockets.size} clientes)`});
             }
         }
-        // FunÃ§Ã£o para processar pacotes baseado no tamanho
+        
+        // Função para processar pacotes baseado no tamanho
         function processPacket(data, socket) {
             const packetSize = data.length;
             let shouldRespond = false;
@@ -902,19 +1023,15 @@ module.exports = function(RED) {
                     Zonas: modelInfo.numZonas,
                     modelByte: data[41].toString(16).toUpperCase().padStart(2, '0')
                 };
-                //particoes = ord(chr(data[51]));
-                //eletrificador = false if '00' in f'{data[54]:0>2X}' else True;
+                
                 msg = [startByte, 0x07, 0x01, 0x21, 0x01, 0x01];
                 node.log(`Modelo identificado: ${modelInfo.modelo} (0x${additionalData.modelByte}) - Eletrificador: ${modelInfo.temEletrificador} - Zonas: ${modelInfo.numZonas}`);
-                //msg = initializePgms();
-                //node.log(msg);
+                
                 initializeZonas();
                 initializeEletrificador();
                 initializeSensors();
                 initializeParticoes();
                 initializePgms();
-            
-            
 
             } else if (packetSize >= 118) {
                 packetType = 'status_118';
@@ -926,7 +1043,7 @@ module.exports = function(RED) {
                 setBatteryStatus(data[12]);
                 // processa 2 bytes a partir da posicao 87;
                 setPgmStatus(data[87+2]);
-                // Processa 50 bytes a partir da posiÃ§Ã£o 31
+                // Processa 50 bytes a partir da posição 31
                 for (let i = 0; i < 50; i++) {
                    if (zona > numZonas) break;
                       const byteData = data[31 + i];
@@ -950,7 +1067,7 @@ module.exports = function(RED) {
             } else {
                 shouldRespond = true;
                 packetType = 'invalid';
-                node.warn(`Tamanho de pacote nÃ£o suportado: ${packetSize} bytes`);
+                node.warn(`Tamanho de pacote não suportado: ${packetSize} bytes`);
                 msg = [startByte, 0x06, 0x01, 0x40, 0x01];
             }
                         
@@ -1015,7 +1132,7 @@ module.exports = function(RED) {
                     if (connectedSockets.size > 0) {
                         node.status({fill:"green", shape:"dot", text:`${connectedSockets.size} cliente(s) conectado(s)`});
                     } else {
-                        node.status({fill:"yellow", shape:"ring", text:"aguardando conexÃ£o"});
+                        node.status({fill:"yellow", shape:"ring", text:"aguardando conexão"});
                     }
                 });
                 
@@ -1061,7 +1178,7 @@ module.exports = function(RED) {
             if (getStateTimer) {
                 clearInterval(getStateTimer);
                 getStateTimer = null;
-                node.log('Get State  timer parado');
+                node.log('Get State timer parado');
             }
             currentAlarmState = {
                 armed_away: false,
