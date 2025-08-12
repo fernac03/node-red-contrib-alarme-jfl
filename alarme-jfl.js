@@ -236,27 +236,30 @@ module.exports = function(RED) {
         // Função para atualizar as PGMs (corrigido)
         function setPgmStatus(byteValue, posicao) {
             const binary = byteValue.toString(2).padStart(8, '0'); // Converte para binário de 8 bits
-            for (let i = 0; i < binary.length; i++) {
-               let pgmNumber;
-               if (posicao === 2) {
-                   pgmNumber = 16 - i;
-               } else {
-                  pgmNumber = 8 - i;
-               }
-             const pgmId = `pgm_${pgmNumber}`;
-             // Verifica se o PGM existe
-             if (pgms[pgmId]) {
-                 const bit = parseInt(binary[i]);
-                 const newState = bit > 0 ? "STATE_ON" : "STATE_OFF";
-                 pgms[pgmId] = {
-                    name: `Pgm ${pgmNumber}`,
-                    type: "toggle",
-                    tipo: "PGM",
-                    state: newState,
-                    switch_number: pgmNumber
-                 };
-             }
-          }
+            for (let i = 0; i < 8; i++) {
+                let pgmNumber;
+                if (posicao === 116) {
+                    // Byte 116: PGMs 9-16
+                    pgmNumber = 9 + i;
+                } else {
+                    // Byte 13: PGMs 1-8
+                    pgmNumber = 1 + i;
+                }
+                
+                const pgmId = `pgm_${pgmNumber}`;
+                // Verifica se o PGM existe
+                if (pgms[pgmId] && pgmNumber <= numPgms) {
+                    const bit = parseInt(binary[7-i]); // Lê da direita para esquerda (bit0 = posição 7)
+                    const newState = bit > 0 ? "STATE_ON" : "STATE_OFF";
+                    pgms[pgmId] = {
+                        name: `Pgm ${pgmNumber}`,
+                        type: "toggle",
+                        tipo: "PGM",
+                        state: newState,
+                        switch_number: pgmNumber
+                    };
+                }
+            }
         }
         
         // Função para inicializar as zonas
@@ -484,9 +487,12 @@ module.exports = function(RED) {
                 return false;
             }
             
-            // Construir comando: [0x07, 0x01, 0x01, 0x50, pgm_byte] (checksum será calculado)
-            const pgmByte = pgmNumber; // PGM 1 = 0x01, PGM 2 = 0x02, etc.
+            // Converter número da PGM para hexadecimal
+            // PGM 1 = 0x01, PGM 2 = 0x02, ..., PGM 10 = 0x0A, ..., PGM 16 = 0x10
+            const pgmByte = parseInt(pgmNumber);
             const command = [...alarmCommands.pgmOn, pgmByte];
+            
+            node.log(`Comando PGM_ON para PGM ${pgmNumber}: [${command.map(b => '0x' + b.toString(16).padStart(2, '0')).join(', ')}]`);
             
             return sendAlarmCommand(command, `PGM_ON_${pgmNumber}`);
         }
@@ -522,9 +528,12 @@ module.exports = function(RED) {
                 return false;
             }
             
-            // Construir comando: [0x07, 0x01, 0x01, 0x51, pgm_byte] (checksum será calculado)
-            const pgmByte = pgmNumber; // PGM 1 = 0x01, PGM 2 = 0x02, etc.
+            // Converter número da PGM para hexadecimal
+            // PGM 1 = 0x01, PGM 2 = 0x02, ..., PGM 10 = 0x0A, ..., PGM 16 = 0x10
+            const pgmByte = parseInt(pgmNumber);
             const command = [...alarmCommands.pgmOff, pgmByte];
+            
+            node.log(`Comando PGM_OFF para PGM ${pgmNumber}: [${command.map(b => '0x' + b.toString(16).padStart(2, '0')).join(', ')}]`);
             
             return sendAlarmCommand(command, `PGM_OFF_${pgmNumber}`);
         }
@@ -1041,8 +1050,16 @@ module.exports = function(RED) {
                 node.warn("Processando pacote 118 bytes");
                 // processa 1 byte na posicao 12;
                 setBatteryStatus(data[12]);
-                // processa 2 bytes a partir da posicao 87;
-                setPgmStatus(data[87+2]);
+                
+                // Processa status das PGMs nos bytes corretos
+                // Byte 13: PGMs 1-8 (bit0 = PGM1, bit1 = PGM2, ..., bit7 = PGM8)
+                setPgmStatus(data[13], 13);
+                
+                // Byte 116: PGMs 9-16 (bit0 = PGM9, bit1 = PGM10, ..., bit7 = PGM16)
+                if (numPgms > 8 && data.length > 116) {
+                    setPgmStatus(data[116], 116);
+                }
+                
                 // Processa 50 bytes a partir da posição 31
                 for (let i = 0; i < 50; i++) {
                    if (zona > numZonas) break;
