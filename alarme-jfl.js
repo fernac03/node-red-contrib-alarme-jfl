@@ -42,8 +42,8 @@ module.exports = function(RED) {
             armAway: [0x06, 0x01, 0x4E, 0x01],
             armStay: [0x06, 0x01, 0x53, 0x01],
             disarm: [0x06, 0x01, 0x4F, 0x01],
-            pgmOn: [0x06, 0x01, 0x01,0x50 ], // + pgm_number (checksum será calculado)
-            pgmOff: [0x06, 0x01,0x01, 0x51], // + pgm_number (checksum será calculado)
+            pgmOn: [0x06, 0x01, 0x50 ], // + pgm_number (checksum será calculado)
+            pgmOff: [0x06, 0x01,0x51], // + pgm_number (checksum será calculado)
         };
         
         // Função para calcular checksum XOR
