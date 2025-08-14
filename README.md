@@ -40,7 +40,7 @@ Sistema completo de monitoramento e controle para centrais de alarme JFL atravé
 
 ```bash
 # Download do instalador
-curl -O https://raw.githubusercontent.com/usuario/node-red-contrib-alarme-jfl/main/install.sh
+curl -O https://raw.githubusercontent.com/fernac03/node-red-contrib-alarme-jfl/main/install.sh
 chmod +x install.sh
 
 # Executar instalação
@@ -164,6 +164,14 @@ curl -X POST http://localhost:1880/jfl/control \
   -H "Content-Type: application/json" \
   -d '{"command": "DISARM", "code": "1234"}'
 ```
+# Ligar PGM
+curl -X POST http://localhost:1880/jfl/control \
+  -H "Content-Type: application/json" \
+  -d '{"command": "PGM_ON","pgmNumber":"1"}'
+# Desligar PGM
+curl -X POST http://localhost:1880/jfl/control \
+  -H "Content-Type: application/json" \
+  -d '{"command": "PGM_OFF","pgmNumber":"1"}'
 
 #### 2. WebSocket
 
